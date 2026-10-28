@@ -19,7 +19,11 @@ export async function GET(req: Request) {
   const started = Date.now();
   const supabase = db();
 
-  const staleBefore = new Date(Date.now() - STALE_DAYS * 86400_000).toISOString();
+  // ?before=<ISO time> also treats anything classified before then as stale
+  // (used to re-run everything after changing the classification rules).
+  const monthAgo = new Date(Date.now() - STALE_DAYS * 86400_000).toISOString();
+  const before = new URL(req.url).searchParams.get("before");
+  const staleBefore = before && before > monthAgo ? new Date(before).toISOString() : monthAgo;
   const [{ data: poolRows, error: pErr }, { data: metaRows, error: mErr }] = await Promise.all([
     supabase.from("pool").select("title").limit(20000),
     supabase.from("pool_meta").select("title, classified_at").limit(20000),

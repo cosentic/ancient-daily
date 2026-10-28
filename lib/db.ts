@@ -15,6 +15,16 @@ export function isAuthorized(req: Request) {
   return req.headers.get("authorization") === `Bearer ${secret}`;
 }
 
+/**
+ * For admin-only jobs that are safe to run any time (no AI spend, no data
+ * loss): accepts the cron secret OR ?key=ADMIN_KEY in the URL.
+ */
+export function isAdmin(req: Request) {
+  if (isAuthorized(req)) return true;
+  const key = process.env.ADMIN_KEY;
+  return !!key && new URL(req.url).searchParams.get("key") === key;
+}
+
 /** Today's date (YYYY-MM-DD) in New York time. */
 export function todayET() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(

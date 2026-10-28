@@ -3,7 +3,7 @@
 const API = "https://en.wikipedia.org/w/api.php";
 const REST = "https://en.wikipedia.org/api/rest_v1";
 // Wikipedia asks every client for a descriptive User-Agent with a contact point.
-const HEADERS = {
+export const HEADERS = {
   "User-Agent": "AncientDaily/1.0 (https://github.com/cosentic/ancient-daily)",
 };
 
@@ -52,7 +52,7 @@ const MIN_BYTES = 8000; // unrated content-category articles: skip stubs
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function api(params: Record<string, string | number>): Promise<any> {
+export async function api(params: Record<string, string | number>): Promise<any> {
   const url = new URL(API);
   const all = { ...params, format: "json", formatversion: 2 };
   for (const [k, v] of Object.entries(all)) url.searchParams.set(k, String(v));

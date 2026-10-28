@@ -1,6 +1,7 @@
 {
   "crons": [
-    { "path": "/api/cron/refresh-pool", "schedule": "0 9 * * *" },
+    { "path": "/api/cron/refresh-pool", "schedule": "0 8 * * *" },
+    { "path": "/api/cron/classify", "schedule": "0 9 * * *" },
     { "path": "/api/cron/daily", "schedule": "0 10 * * *" }
   ]
 }

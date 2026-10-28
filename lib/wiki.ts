@@ -173,8 +173,15 @@ export async function isOffTopic(title: string) {
   );
   return cats.some((c) => {
     if (c === "Category:Living people") return true;
-    const m = c.match(/^Category:(\d{3,4}) births$/);
-    return m ? Number(m[1]) >= 1500 : false;
+    // Modern people: "1952 births"
+    const born = c.match(/^Category:(\d{3,4}) births$/);
+    if (born) return Number(born[1]) >= 1500;
+    // Modern works and media: "1894 novels", "1987 manga", "2004 films", "1999 comics debuts"…
+    const work = c.match(
+      /^Category:(\d{4}) (novels|novellas|short stories|books|poems|plays|films|manga|comics|anime|songs|albums|video games|television|operas|paintings|sculptures)\b/,
+    );
+    if (work) return Number(work[1]) >= 1500;
+    return false;
   });
 }
 

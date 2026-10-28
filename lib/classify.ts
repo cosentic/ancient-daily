@@ -23,6 +23,7 @@ const MUSEUM_EXCEPT = new Set(["Q839954"]);
 const KINDS: Record<Exclude<Kind, "other">, Record<string, string>> = {
   person: {
     Q5: "human",
+    Q21070568: "human whose existence is disputed", // Homer, Ambrosius Aurelianus…
     Q178885: "deity",
     Q4271324: "mythological character",
     Q13002315: "legendary figure",

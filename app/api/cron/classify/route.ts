@@ -6,6 +6,7 @@ export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 const BATCH = 50;
+const CONCURRENCY = 3;
 const TIME_BUDGET_MS = 230_000; // stop well before the 300s limit
 const STALE_DAYS = 30; // re-check views/types monthly
 
@@ -35,8 +36,7 @@ export async function GET(req: Request) {
   let done = 0;
   const tally: Record<string, number> = {};
   const errors: string[] = [];
-  for (let i = 0; i < todo.length; i += BATCH) {
-    if (Date.now() - started > TIME_BUDGET_MS) break;
+  async function runBatch(i: number) {
     const batch = todo.slice(i, i + BATCH);
     try {
       const rows = await classifyBatch(batch);
@@ -50,8 +50,15 @@ export async function GET(req: Request) {
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`batch at ${i}: ${msg}`);
       console.error(`[classify] batch at ${i}: ${msg}`);
-      if (errors.length >= 3) break; // something systemic; stop and report
     }
+  }
+
+  // A few batches at a time (Wikidata allows ~5 concurrent queries per client).
+  for (let i = 0; i < todo.length; i += BATCH * CONCURRENCY) {
+    if (Date.now() - started > TIME_BUDGET_MS || errors.length >= 3) break;
+    const starts = [];
+    for (let j = 0; j < CONCURRENCY && i + j * BATCH < todo.length; j++) starts.push(i + j * BATCH);
+    await Promise.all(starts.map(runBatch));
   }
 
   const result = {

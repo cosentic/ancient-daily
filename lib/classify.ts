@@ -16,9 +16,9 @@ const EXCLUDE: Record<string, string> = {
   Q7889: "video game",
   Q13406463: "Wikimedia list",
   Q4167410: "disambiguation page",
-  Q95074: "fictional character",
-  Q11862829: "academic discipline",
 };
+// Museums are dropped unless they're also an ancient site (e.g. Roman Baths).
+const MUSEUM_EXCEPT = new Set(["Q839954"]);
 
 const KINDS: Record<Exclude<Kind, "other">, Record<string, string>> = {
   person: {
@@ -27,6 +27,7 @@ const KINDS: Record<Exclude<Kind, "other">, Record<string, string>> = {
     Q4271324: "mythological character",
     Q13002315: "legendary figure",
     Q2239243: "legendary creature",
+    Q95074: "fictional character", // Wikidata tags many biblical/mythic figures this way
   },
   event: {
     Q1190554: "occurrence",
@@ -41,6 +42,7 @@ const KINDS: Record<Exclude<Kind, "other">, Record<string, string>> = {
     Q15661340: "ancient city",
     Q811979: "architectural structure",
     Q82794: "geographic region",
+    Q7075: "library",
   },
   peoples: {
     Q41710: "ethnic group",
@@ -50,8 +52,8 @@ const KINDS: Record<Exclude<Kind, "other">, Record<string, string>> = {
   },
   object: {
     Q220659: "archaeological artifact",
-    Q16686448: "artificial object",
     Q386724: "work",
+    Q80071: "symbol",
   },
 };
 const KIND_ORDER: Exclude<Kind, "other">[] = ["person", "event", "place", "peoples", "object"];
@@ -153,7 +155,10 @@ SELECT ?item ?cls WHERE {
 
 function kindOf(classes: Set<string> | undefined): { kind: Kind; labels: string[] } {
   if (!classes?.size) return { kind: "other", labels: [] };
-  const excluded = [...classes].filter((c) => EXCLUDE[c]).map((c) => EXCLUDE[c]);
+  const excluded = [...classes]
+    .filter((c) => EXCLUDE[c])
+    .filter((c) => !(c === "Q33506" && [...classes].some((x) => MUSEUM_EXCEPT.has(x))))
+    .map((c) => EXCLUDE[c]);
   if (excluded.length) return { kind: "other", labels: excluded };
   for (const k of KIND_ORDER) {
     const hits = [...classes].filter((c) => KINDS[k][c]).map((c) => KINDS[k][c]);

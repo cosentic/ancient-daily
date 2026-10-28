@@ -24,16 +24,30 @@ export async function GET(req: Request) {
   const monthAgo = new Date(Date.now() - STALE_DAYS * 86400_000).toISOString();
   const before = new URL(req.url).searchParams.get("before");
   const staleBefore = before && before > monthAgo ? new Date(before).toISOString() : monthAgo;
-  const [{ data: poolRows, error: pErr }, { data: metaRows, error: mErr }] = await Promise.all([
-    supabase.from("pool").select("title").limit(20000),
-    supabase.from("pool_meta").select("title, classified_at").limit(20000),
+  // Supabase returns at most 1,000 rows per request, so page through.
+  async function all<T>(table: string, cols: string): Promise<T[]> {
+    const out: T[] = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await supabase
+        .from(table)
+        .select(cols)
+        .order("title")
+        .range(from, from + 999);
+      if (error) throw error;
+      out.push(...((data ?? []) as T[]));
+      if (!data || data.length < 1000) return out;
+    }
+  }
+  const [poolRows, metaRows] = await Promise.all([
+    all<{ title: string }>("pool", "title"),
+    all<{ title: string; classified_at: string }>("pool_meta", "title, classified_at"),
   ]);
-  if (pErr) throw pErr;
-  if (mErr) throw mErr;
   const fresh = new Set(
-    (metaRows ?? []).filter((m) => m.classified_at >= staleBefore).map((m) => m.title),
+    metaRows
+      .filter((m) => new Date(m.classified_at) >= new Date(staleBefore))
+      .map((m) => m.title),
   );
-  const todo = [...new Set((poolRows ?? []).map((r) => r.title as string))].filter(
+  const todo = [...new Set(poolRows.map((r) => r.title))].filter(
     (t) => !fresh.has(t),
   );
 

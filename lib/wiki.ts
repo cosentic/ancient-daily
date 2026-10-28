@@ -23,7 +23,7 @@ export const GROUPS: Record<string, GroupSource> = {
       Aztec: 1,
       Olmec: 1,
       Teotihuacan: 1,
-      "Mesoamerican cultures": 1,
+      "Mesoamerican cultures": 0,
       "Mesoamerican mythology": 1,
     },
   },
@@ -56,10 +56,22 @@ async function api(params: Record<string, string | number>): Promise<any> {
   const url = new URL(API);
   const all = { ...params, format: "json", formatversion: 2 };
   for (const [k, v] of Object.entries(all)) url.searchParams.set(k, String(v));
-  const res = await fetch(url, { headers: HEADERS, cache: "no-store" });
-  if (!res.ok) throw new Error(`Wikipedia API ${res.status} for ${url}`);
-  await sleep(100); // be polite
-  return res.json();
+  // Retry on rate limits / temporary errors, honoring Retry-After.
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, { headers: HEADERS, cache: "no-store" });
+    if (res.ok) {
+      await sleep(200); // be polite
+      return res.json();
+    }
+    if ((res.status === 429 || res.status >= 500) && attempt < 5) {
+      const retryAfter = Number(res.headers.get("retry-after"));
+      const wait = retryAfter > 0 ? retryAfter * 1000 : 2000 * 2 ** attempt;
+      console.warn(`[wiki] ${res.status}, retrying in ${wait}ms`);
+      await sleep(Math.min(wait, 30000));
+      continue;
+    }
+    throw new Error(`Wikipedia API ${res.status} for ${url}`);
+  }
 }
 
 /** Articles a WikiProject rates B-class or better. */

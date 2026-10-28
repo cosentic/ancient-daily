@@ -19,7 +19,7 @@ export async function summarize(title: string, body: string, lead: string) {
     const client = new Anthropic();
     const msg = await client.messages.create({
       model: "claude-haiku-5-5",
-      max_tokens: 900,
+      max_tokens: 3000,
       messages: [
         {
           role: "user",
@@ -31,10 +31,16 @@ export async function summarize(title: string, body: string, lead: string) {
       .map((b) => (b.type === "text" ? b.text : ""))
       .join("")
       .trim();
-    // Guard against a non-answer: a real summary is several paragraphs.
+    // Guard against non-answers and cut-off output: a real summary is several
+    // paragraphs, ends with the fact line, and finished on its own.
     const paragraphs = text.split(/\n+/).filter((p) => p.trim()).length;
-    if (paragraphs < 3 || text.length < 400) {
-      console.warn(`[summarize] short output for "${title}" (${text.length} chars); using lead`);
+    const complete =
+      msg.stop_reason === "end_turn" && /Surprising fact:/.test(text) && paragraphs >= 3;
+    if (!complete) {
+      console.warn(
+        `[summarize] incomplete output for "${title}": stop=${msg.stop_reason}, ` +
+          `${text.length} chars, ${paragraphs} paragraphs; using lead`,
+      );
       return lead;
     }
     return text;

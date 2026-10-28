@@ -17,8 +17,26 @@ export const GROUPS: Record<string, GroupSource> = {
   "Ancient Rome": { categories: { "Ancient Rome": 1 } },
   "Ancient Egypt": { projects: ["Ancient Egypt"] },
   "Ancient Near East": { projects: ["Ancient Near East"] },
-  Mesoamerica: { projects: ["Mesoamerica"] },
-  Celts: { projects: ["Celts"] },
+  Mesoamerica: {
+    categories: {
+      "Maya civilization": 2,
+      Aztec: 1,
+      Olmec: 1,
+      Teotihuacan: 1,
+      "Mesoamerican cultures": 1,
+      "Mesoamerican mythology": 1,
+    },
+  },
+  Celts: {
+    categories: {
+      Celts: 1,
+      "Celtic mythology": 1,
+      Gauls: 1,
+      "La Tène culture": 1,
+      "Hallstatt culture": 1,
+      "Ancient Celtic peoples": 1,
+    },
+  },
   "Ancient Britain": {
     categories: {
       "Roman Britain": 2,

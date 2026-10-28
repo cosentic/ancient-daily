@@ -124,6 +124,30 @@ export async function buildGroup(name: string) {
   return { titles: [...titles].sort(), log };
 }
 
+/**
+ * True for articles that aren't really "ancient world" reading: biographies of
+ * modern people (e.g. Egyptologists tagged by WikiProjects) and list pages.
+ */
+export async function isOffTopic(title: string) {
+  if (/^(List|Lists|Timeline|Index) of /i.test(title)) return true;
+  const data = await api({
+    action: "query",
+    prop: "categories",
+    clshow: "!hidden",
+    cllimit: "max",
+    redirects: 1,
+    titles: title,
+  });
+  const cats: string[] = (data.query?.pages?.[0]?.categories ?? []).map(
+    (c: { title: string }) => c.title,
+  );
+  return cats.some((c) => {
+    if (c === "Category:Living people") return true;
+    const m = c.match(/^Category:(\d{3,4}) births$/);
+    return m ? Number(m[1]) >= 1500 : false;
+  });
+}
+
 /** Short lead + URL from the REST API, plus the full plain-text body. */
 export async function fetchArticle(title: string) {
   const slug = encodeURIComponent(title.replace(/ /g, "_"));

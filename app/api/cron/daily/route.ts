@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db, isAuthorized, todayET } from "@/lib/db";
-import { fetchArticle } from "@/lib/wiki";
+import { fetchArticle, isOffTopic } from "@/lib/wiki";
 import { summarize } from "@/lib/summarize";
 
 export const maxDuration = 120;
@@ -42,24 +42,38 @@ export async function GET(req: Request) {
     );
   }
 
-  // Try groups in random order; if everything has been seen, allow repeats.
-  let grp = "";
-  let title: string | null = null;
-  for (const allowRepeat of [false, true]) {
-    for (const g of shuffle(groups.map((r) => r.grp as string))) {
-      const { data } = await supabase.rpc("pick_random_title", {
-        p_grp: g,
-        p_allow_repeat: allowRepeat,
-      });
-      if (data) {
-        grp = g;
-        title = data as string;
-        break;
+  // Pick a random group, then a random unseen title in it. Skip (and exclude for
+  // good) modern biographies and list pages. If everything's been seen, allow repeats.
+  async function pickOnce(): Promise<{ grp: string; title: string } | null> {
+    for (const allowRepeat of [false, true]) {
+      for (const g of shuffle(groups!.map((r) => r.grp as string))) {
+        const { data } = await supabase.rpc("pick_random_title", {
+          p_grp: g,
+          p_allow_repeat: allowRepeat,
+        });
+        if (data) return { grp: g, title: data as string };
       }
     }
-    if (title) break;
+    return null;
   }
-  if (!title) return NextResponse.json({ error: "no title found" }, { status: 500 });
+
+  let picked: { grp: string; title: string } | null = null;
+  const skipped: string[] = [];
+  for (let attempt = 0; attempt < 10 && !picked; attempt++) {
+    const candidate = await pickOnce();
+    if (!candidate) break;
+    if (await isOffTopic(candidate.title)) {
+      skipped.push(candidate.title);
+      await supabase
+        .from("pool_excluded")
+        .upsert({ title: candidate.title, reason: "modern biography or list" });
+      continue;
+    }
+    picked = candidate;
+  }
+  if (skipped.length) console.log(`[daily] skipped off-topic: ${skipped.join(", ")}`);
+  if (!picked) return NextResponse.json({ error: "no title found", skipped }, { status: 500 });
+  const { grp, title } = picked;
 
   const article = await fetchArticle(title);
   const summary = await summarize(article.title, article.body, article.lead);
@@ -77,5 +91,5 @@ export async function GET(req: Request) {
     .upsert(row, { onConflict: "day", ignoreDuplicates: true });
   if (insErr) throw insErr;
 
-  return NextResponse.json({ status: "picked", article: row });
+  return NextResponse.json({ status: "picked", article: row, skipped });
 }

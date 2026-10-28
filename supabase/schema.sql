@@ -28,6 +28,16 @@ create table if not exists daily_articles (
 
 create index if not exists daily_articles_title_idx on daily_articles (title);
 
+-- Last refresh outcome per group (counts per source, or the error).
+alter table pool_groups add column if not exists last_log text;
+
+-- Titles never to pick (modern biographies, list pages), filled by the daily job.
+create table if not exists pool_excluded (
+  title      text primary key,
+  reason     text,
+  created_at timestamptz not null default now()
+);
+
 -- Random title from a group, skipping anything already used (unless allow_repeat).
 create or replace function pick_random_title(p_grp text, p_allow_repeat boolean default false)
 returns text
@@ -38,6 +48,7 @@ as $$
   select p.title
   from pool p
   where p.grp = p_grp
+    and not exists (select 1 from pool_excluded x where x.title = p.title)
     and (p_allow_repeat or not exists (
       select 1 from daily_articles d where d.title = p.title
     ))
@@ -52,6 +63,7 @@ revoke execute on function pick_random_title(text, boolean) from anon, authentic
 alter table pool_groups    enable row level security;
 alter table pool           enable row level security;
 alter table daily_articles enable row level security;
+alter table pool_excluded  enable row level security;
 
 drop policy if exists "public read daily" on daily_articles;
 create policy "public read daily" on daily_articles for select using (true);

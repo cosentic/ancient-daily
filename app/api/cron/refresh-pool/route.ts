@@ -39,11 +39,30 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: `unknown group ${group}` }, { status: 400 });
   }
 
-  const { titles, log } = await buildGroup(group);
+  // Record the outcome either way, so a failing group doesn't block the others
+  // and the reason is visible in pool_groups.last_log.
+  const note = async (lastLog: string) =>
+    supabase
+      .from("pool_groups")
+      .update({ refreshed_at: new Date().toISOString(), last_log: lastLog })
+      .eq("grp", group);
+
+  let titles: string[];
+  let log: string[];
+  try {
+    ({ titles, log } = await buildGroup(group));
+  } catch (e) {
+    const msg = `ERROR: ${e instanceof Error ? e.message : String(e)}`;
+    console.error(`[refresh-pool] ${group}: ${msg}`);
+    await note(msg);
+    return NextResponse.json({ group, error: msg }, { status: 502 });
+  }
+  console.log(`[refresh-pool] ${group}: ${titles.length} titles\n${log.join("\n")}`);
 
   // Don't wipe a working pool if Wikipedia returned nothing.
   if (titles.length === 0) {
-    return NextResponse.json({ group, count: 0, log, kept: "previous pool" }, { status: 502 });
+    await note(`0 titles; kept previous pool\n${log.join("\n")}`);
+    return NextResponse.json({ group, count: 0, log, kept: "previous pool" });
   }
 
   const { error: delErr } = await supabase.from("pool").delete().eq("grp", group);
@@ -55,7 +74,11 @@ export async function GET(req: Request) {
   }
   const { error: updErr } = await supabase
     .from("pool_groups")
-    .update({ refreshed_at: new Date().toISOString(), article_count: titles.length })
+    .update({
+      refreshed_at: new Date().toISOString(),
+      article_count: titles.length,
+      last_log: log.join("\n"),
+    })
     .eq("grp", group);
   if (updErr) throw updErr;
 

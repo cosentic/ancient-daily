@@ -33,6 +33,7 @@ create or replace function pick_random_title(p_grp text, p_allow_repeat boolean 
 returns text
 language sql
 stable
+set search_path = public
 as $$
   select p.title
   from pool p
@@ -43,6 +44,8 @@ as $$
   order by random()
   limit 1;
 $$;
+
+revoke execute on function pick_random_title(text, boolean) from anon, authenticated, public;
 
 -- Lock tables down. The app uses the service-role key server-side, which
 -- bypasses RLS. Daily articles are readable publicly for a future frontend.

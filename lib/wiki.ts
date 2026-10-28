@@ -13,8 +13,10 @@ type GroupSource = {
 };
 
 export const GROUPS: Record<string, GroupSource> = {
-  "Greece & Rome": { projects: ["Classical Greece and Rome"] },
-  "Ancient Rome": { categories: { "Ancient Rome": 1 } },
+  "Greece & Rome": {
+    projects: ["Classical Greece and Rome"],
+    categories: { "Ancient Rome": 1 },
+  },
   "Ancient Egypt": { projects: ["Ancient Egypt"] },
   "Ancient Near East": { projects: ["Ancient Near East"] },
   Mesoamerica: {

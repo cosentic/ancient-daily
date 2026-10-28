@@ -3,11 +3,24 @@
 
 import { api, HEADERS, isModern } from "@/lib/wiki";
 
-export type Kind = "person" | "place" | "event" | "object" | "peoples" | "other";
+export type Kind =
+  | "person"
+  | "place"
+  | "event"
+  | "object"
+  | "peoples"
+  | "concept"
+  | "other";
 
 // Wikidata classes. An item counts if it's an instance of the class or any subclass.
 // EXCLUDE wins over everything; then the first matching kind in KIND_ORDER.
+// Anything left over that has a Wikidata entry is a "concept" (religions,
+// philosophies, myths, eras: Stoicism, Zoroastrianism, Atlantis, Iron Age).
 const EXCLUDE: Record<string, string> = {
+  Q6999: "astronomical object",
+  Q16521: "taxon",
+  Q38829: "breed",
+  Q4167836: "Wikimedia category",
   Q34770: "language",
   Q25295: "language family",
   Q33506: "museum",
@@ -20,7 +33,8 @@ const EXCLUDE: Record<string, string> = {
 // Museums are dropped unless they're also an ancient site (e.g. Roman Baths).
 const MUSEUM_EXCEPT = new Set(["Q839954"]);
 
-const KINDS: Record<Exclude<Kind, "other">, Record<string, string>> = {
+type MatchedKind = Exclude<Kind, "other" | "concept">;
+const KINDS: Record<MatchedKind, Record<string, string>> = {
   person: {
     Q5: "human",
     Q21070568: "human whose existence is disputed", // Homer, Ambrosius Aurelianus…
@@ -57,7 +71,7 @@ const KINDS: Record<Exclude<Kind, "other">, Record<string, string>> = {
     Q80071: "symbol",
   },
 };
-const KIND_ORDER: Exclude<Kind, "other">[] = ["person", "event", "place", "peoples", "object"];
+const KIND_ORDER: MatchedKind[] =["person", "event", "place", "peoples", "object"];
 
 const ALL_CLASSES = [
   ...Object.keys(EXCLUDE),
@@ -162,8 +176,12 @@ SELECT ?item ?cls WHERE {
   }
 }
 
-function kindOf(classes: Set<string> | undefined): { kind: Kind; labels: string[] } {
-  if (!classes?.size) return { kind: "other", labels: [] };
+function kindOf(
+  classes: Set<string> | undefined,
+  hasQid: boolean,
+): { kind: Kind; labels: string[] } {
+  // Has a Wikidata entry but isn't any of our concrete types: an idea, belief, era, myth.
+  if (!classes?.size) return hasQid ? { kind: "concept", labels: [] } : { kind: "other", labels: [] };
   const excluded = [...classes]
     .filter((c) => EXCLUDE[c])
     .filter((c) => !(c === "Q33506" && [...classes].some((x) => MUSEUM_EXCEPT.has(x))))
@@ -173,7 +191,7 @@ function kindOf(classes: Set<string> | undefined): { kind: Kind; labels: string[
     const hits = [...classes].filter((c) => KINDS[k][c]).map((c) => KINDS[k][c]);
     if (hits.length) return { kind: k, labels: hits };
   }
-  return { kind: "other", labels: [] };
+  return { kind: "concept", labels: [] };
 }
 
 /** Classifies up to 50 titles. */
@@ -186,7 +204,7 @@ export async function classifyBatch(titles: string[]): Promise<Meta[]> {
     if (i.modern) {
       return { title, qid: i.qid, kind: "other", classes: ["modern"], views_per_day: i.views };
     }
-    const { kind, labels } = kindOf(i.qid ? classes.get(i.qid) : undefined);
+    const { kind, labels } = kindOf(i.qid ? classes.get(i.qid) : undefined, !!i.qid);
     return { title, qid: i.qid, kind, classes: labels, views_per_day: i.views };
   });
 }

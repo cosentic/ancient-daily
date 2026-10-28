@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db, isAuthorized } from "@/lib/db";
+import { db, isAdmin } from "@/lib/db";
 import { GROUPS, buildGroup } from "@/lib/wiki";
 
 export const maxDuration = 300;
@@ -7,18 +7,24 @@ export const dynamic = "force-dynamic";
 
 /**
  * Rebuilds ONE group's pool per call, choosing the one refreshed longest ago
- * (never-built groups first). Run daily, each of the 7 groups refreshes about
- * weekly, and every run stays well under the function time limit.
+ * (never-built groups first). Run daily, each group refreshes about weekly,
+ * and every run stays well under the function time limit.
  * Override with ?group=Celts.
  */
 export async function GET(req: Request) {
-  if (!isAuthorized(req)) {
+  if (!isAdmin(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const supabase = db();
 
-  // Make sure every configured group has a row.
+  // Drop groups that are no longer configured (their pool rows cascade),
+  // and make sure every configured group has a row.
   const names = Object.keys(GROUPS);
+  const { error: dropErr } = await supabase
+    .from("pool_groups")
+    .delete()
+    .not("grp", "in", `(${names.map((n) => `"${n}"`).join(",")})`);
+  if (dropErr) throw dropErr;
   const { error: seedErr } = await supabase
     .from("pool_groups")
     .upsert(names.map((grp) => ({ grp })), { onConflict: "grp", ignoreDuplicates: true });

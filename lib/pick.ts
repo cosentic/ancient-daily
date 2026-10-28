@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fetchArticle, isOffTopic } from "@/lib/wiki";
+import { GROUPS, fetchArticle, isOffTopic } from "@/lib/wiki";
 import { summarize } from "@/lib/summarize";
 
 export type Picked = {
@@ -32,7 +32,8 @@ export async function pickAndSummarize(supabase: SupabaseClient): Promise<Picked
     .gt("article_count", 0);
   if (error) throw error;
   if (!groups?.length) return null;
-  const names = groups.map((r) => r.grp as string);
+  const names = groups.map((r) => r.grp as string).filter((g) => g in GROUPS);
+  if (!names.length) return null;
 
   async function pickOnce(): Promise<{ grp: string; title: string } | null> {
     for (const allowRepeat of [false, true]) {

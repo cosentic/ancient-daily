@@ -1,7 +1,7 @@
 // Classifies pool titles by what they are (Wikidata "instance of", following
 // subclasses) and how popular they are (Wikipedia page views).
 
-import { api, HEADERS } from "@/lib/wiki";
+import { api, HEADERS, isModern } from "@/lib/wiki";
 
 export type Kind = "person" | "place" | "event" | "object" | "peoples" | "other";
 
@@ -80,36 +80,44 @@ async function wikiInfo(titles: string[]) {
     action: "query",
     titles: titles.join("|"),
     redirects: 1,
-    prop: "pageprops|pageviews",
+    prop: "pageprops|pageviews|categories",
     ppprop: "wikibase_item",
     pvipdays: 60,
+    clshow: "!hidden",
+    cllimit: "max",
   };
-  // Follow continuations: pageviews may be returned across several responses.
-  const pages = new Map<string, { qid?: string; views: Record<string, number | null> }>();
+  // Follow continuations: views and categories may arrive across several responses.
+  type Page = { qid?: string; views: Record<string, number | null>; cats: string[] };
+  const pages = new Map<string, Page>();
   const normalized = new Map<string, string>();
   const redirects = new Map<string, string>();
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 25; i++) {
     const data = await api(params);
     for (const n of data.query?.normalized ?? []) normalized.set(n.from, n.to);
     for (const r of data.query?.redirects ?? []) redirects.set(r.from, r.to);
     for (const p of data.query?.pages ?? []) {
-      const prev = pages.get(p.title) ?? { views: {} };
+      const prev = pages.get(p.title) ?? { views: {}, cats: [] };
       if (p.pageprops?.wikibase_item) prev.qid = p.pageprops.wikibase_item;
       if (p.pageviews) Object.assign(prev.views, p.pageviews);
+      for (const c of p.categories ?? []) prev.cats.push(c.title);
       pages.set(p.title, prev);
     }
     if (!data.continue) break;
     Object.assign(params, data.continue);
   }
 
-  const out = new Map<string, { qid: string | null; views: number }>();
+  const out = new Map<string, { qid: string | null; views: number; modern: boolean }>();
   for (const t of titles) {
     const norm = normalized.get(t) ?? t;
     const final = redirects.get(norm) ?? norm;
     const p = pages.get(final);
     const counts = Object.values(p?.views ?? {}).filter((v): v is number => typeof v === "number");
     const views = counts.length ? counts.reduce((a, b) => a + b, 0) / counts.length : 0;
-    out.set(t, { qid: p?.qid ?? null, views: Math.round(views * 10) / 10 });
+    out.set(t, {
+      qid: p?.qid ?? null,
+      views: Math.round(views * 10) / 10,
+      modern: isModern(p?.cats ?? []),
+    });
   }
   return out;
 }
@@ -175,6 +183,9 @@ export async function classifyBatch(titles: string[]): Promise<Meta[]> {
   const classes = await wikidataClasses(qids);
   return titles.map((title) => {
     const i = info.get(title)!;
+    if (i.modern) {
+      return { title, qid: i.qid, kind: "other", classes: ["modern"], views_per_day: i.views };
+    }
     const { kind, labels } = kindOf(i.qid ? classes.get(i.qid) : undefined);
     return { title, qid: i.qid, kind, classes: labels, views_per_day: i.views };
   });

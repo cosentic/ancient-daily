@@ -171,6 +171,11 @@ export async function isOffTopic(title: string) {
   const cats: string[] = (data.query?.pages?.[0]?.categories ?? []).map(
     (c: { title: string }) => c.title,
   );
+  return isModern(cats);
+}
+
+/** True if a page's categories mark it as a modern person or modern work. */
+export function isModern(cats: string[]) {
   return cats.some((c) => {
     if (c === "Category:Living people") return true;
     // Modern people: "1952 births"

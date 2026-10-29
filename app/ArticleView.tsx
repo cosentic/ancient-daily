@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { articleHref, splitParas, type Seg } from "@/lib/paras";
 
 export type Img = { src: string; width?: number; height?: number; caption: string; credit: string };
@@ -28,19 +29,44 @@ function Figure({ img, className }: { img: Img; className: string }) {
   );
 }
 
-function Para({ segs, className }: { segs: Seg[]; className?: string }) {
+function Para({
+  segs,
+  className,
+  onOpen,
+}: {
+  segs: Seg[];
+  className?: string;
+  onOpen: (title: string, e: React.MouseEvent<HTMLAnchorElement>) => void;
+}) {
   return (
     <p className={className}>
       {segs.map((s, i) =>
         typeof s === "string" ? (
           s
         ) : (
-          <Link key={i} href={articleHref(s.title)} className="xref" rel="nofollow">
+          <Link
+            key={i}
+            href={articleHref(s.title)}
+            className="xref"
+            rel="nofollow"
+            onClick={(e) => onOpen(s.title, e)}
+          >
             {s.text}
           </Link>
         ),
       )}
     </p>
+  );
+}
+
+/** Same layout as app/a/[...slug]/loading.tsx. */
+function LoadingView({ title }: { title: string }) {
+  return (
+    <>
+      <p className="kicker">Ancient Daily</p>
+      <h1>{title}</h1>
+      <p className="loading-status">Loading article…</p>
+    </>
   );
 }
 
@@ -63,6 +89,35 @@ export default function ArticleView({
   const [isPreview, setIsPreview] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Title of a linked article being opened: show its loading screen right away
+  // instead of relying on Next.js having prefetched the route's loading state.
+  const [opening, setOpening] = useState<string | null>(null);
+  const router = useRouter();
+  const [, startTransition] = useTransition();
+
+  function openArticle(title: string, e: React.MouseEvent<HTMLAnchorElement>) {
+    // Let modified clicks (new tab/window) behave normally.
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+      return;
+    }
+    e.preventDefault();
+    setOpening(title);
+    window.scrollTo({ top: 0 });
+    startTransition(() => router.push(articleHref(title)));
+  }
+
+  // If the user comes back (browser back button), drop the loading state.
+  useEffect(() => {
+    const reset = () => setOpening(null);
+    window.addEventListener("pageshow", reset);
+    window.addEventListener("popstate", reset);
+    return () => {
+      window.removeEventListener("pageshow", reset);
+      window.removeEventListener("popstate", reset);
+    };
+  }, []);
+
+  if (opening) return <LoadingView title={opening} />;
 
   // TEMPORARY: "Try another" cycles random articles without changing today's pick.
   async function tryAnother() {
@@ -135,9 +190,9 @@ export default function ArticleView({
       <h1>{article.title}</h1>
       {hero && <Figure img={hero} className="hero" />}
       {paras.map((segs, i) =>
-        i === factIndex ? null : <Para key={i} segs={segs} />,
+        i === factIndex ? null : <Para key={i} segs={segs} onOpen={openArticle} />,
       )}
-      {factIndex >= 0 && <Para segs={paras[factIndex]} className="fact" />}
+      {factIndex >= 0 && <Para segs={paras[factIndex]} className="fact" onOpen={openArticle} />}
       {gallery.length > 0 && (
         <div className="gallery">
           {gallery.map((img) => (

@@ -189,7 +189,9 @@ export function isModern(cats: string[]) {
     );
     if (work) return Number(work[1]) >= 1500;
     // Modern buildings and foundations: "Houses completed in 1925",
-    // "Buildings and structures completed in 1923", "1994 establishments in Mexico"
+    // "Buildings and structures completed in 1923", "1994 establishments in Mexico".
+    // Skipped for places with ancient roots (e.g. a temple rebuilt in 1975).
+    if (hasAncientRoots(cats)) return false;
     const built = c.match(/ completed in (\d{4})$/);
     if (built) return Number(built[1]) >= 1500;
     const founded = c.match(/^Category:(\d{4}) establishments\b/);
@@ -199,17 +201,25 @@ export function isModern(cats: string[]) {
 }
 
 /**
- * True for present-day places (countries, cities, states, communes) as opposed
- * to ancient sites. "Cities in France" → modern; "Archaeological sites in
- * Mexico" or anything mentioning ancient/former/ruins → ancient, kept.
+ * True if any category ties the page to antiquity: archaeology, ancient/former/
+ * prehistoric places, BC or 1st–14th-century categories, historical regions,
+ * biblical/Phoenician/Philistine cities, Greek colonies.
  */
-export function isPresentDayPlace(cats: string[]) {
-  const ancient = cats.some((c) =>
-    /archaeolog|ancient|former |ruins|prehistoric|roman |iron age|bronze age|classical|pre-columbian|maya|aztec/i.test(
+export function hasAncientRoots(cats: string[]) {
+  return cats.some((c) =>
+    /archaeolog|ancient|former |ruins|prehistoric|pre-columbian|iron age|bronze age|classical antiquity|historical region|historic region|hebrew bible|biblical|philistine|phoenician|greek colon|roman (towns|cities|sites|forts|settlements|temples|colonies)|\bBC\b|\b(1st|2nd|3rd|[4-9]th|1[0-4]th)[- ]century\b/i.test(
       c,
     ),
   );
-  if (ancient) return false;
+}
+
+/**
+ * True for present-day places (countries, cities, states, communes) as opposed
+ * to ancient sites. "Cities in France" → modern, unless the page also has
+ * ancient roots (see hasAncientRoots).
+ */
+export function isPresentDayPlace(cats: string[]) {
+  if (hasAncientRoots(cats)) return false;
   return cats.some((c) =>
     /^Category:(Communes|Municipalities|Cities|Towns|Prefectures|Capitals|Countries|Member states|States|Regions|Provinces|Departments|Counties|Populated places)( and [a-z ]+)? (of|in) /.test(
       c,

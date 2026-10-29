@@ -46,10 +46,13 @@ a.xref:hover { color: var(--accent); }
 .home-link {
   font-size: 15px; color: var(--accent); text-decoration: none;
 }
-.loading-title { opacity: 0.6; animation: pulse 1.4s ease-in-out infinite; }
-.loading-note { color: var(--muted); font-size: 16px; }
-@keyframes pulse { 50% { opacity: 0.25; } }
-@media (prefers-reduced-motion: reduce) { .loading-title { animation: none; } }
+.loading-status {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 15px; color: var(--muted);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .loading-status { animation: none; } }
 
 figure { margin: 0; }
 figure img { display: block; width: 100%; height: auto; background: var(--rule); }

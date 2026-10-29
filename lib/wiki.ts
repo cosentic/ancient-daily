@@ -242,6 +242,20 @@ export async function fetchArticle(title: string) {
     redirects: 1,
     titles: title,
   });
+  const images = await fetchImages(title).catch((e) => {
+    console.warn(`[images] ${title}: ${e instanceof Error ? e.message : e}`);
+    return [] as WikiImage[];
+  });
+  // Fall back to the summary's lead image if the media list had nothing usable.
+  if (!images.length && summary.originalimage?.source) {
+    images.push({
+      src: summary.thumbnail?.source ?? summary.originalimage.source,
+      width: summary.thumbnail?.width ?? summary.originalimage.width,
+      height: summary.thumbnail?.height ?? summary.originalimage.height,
+      caption: "",
+      credit: summary.content_urls?.desktop?.page ?? `https://en.wikipedia.org/wiki/${slug}`,
+    });
+  }
   return {
     title: (summary.title as string) ?? title,
     url:
@@ -249,5 +263,49 @@ export async function fetchArticle(title: string) {
       `https://en.wikipedia.org/wiki/${slug}`,
     lead: (summary.extract as string) ?? "",
     body: (full.query?.pages?.[0]?.extract as string) ?? "",
+    images,
   };
+}
+
+export type WikiImage = {
+  src: string; // ~640px-wide thumbnail on upload.wikimedia.org
+  width?: number;
+  height?: number;
+  caption: string;
+  credit: string; // file page with author and license
+};
+
+const MAX_IMAGES = 5;
+// Skip maps, flags, icons, logos, diagrams: mostly SVGs or obviously named files.
+const SKIP_FILE = /\.svg$|icon|logo|flag|commons-|wiki(media|pedia)|question_book|ambox|edit-clear|padlock|symbol_support|locator|location_map|_map\b|blank/i;
+
+/** Up to MAX_IMAGES photos from the article, in article order, with captions. */
+export async function fetchImages(title: string): Promise<WikiImage[]> {
+  const slug = encodeURIComponent(title.replace(/ /g, "_"));
+  const res = await fetch(`${REST}/page/media-list/${slug}`, {
+    headers: HEADERS,
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`media-list ${res.status}`);
+  const data: any = await res.json();
+  const out: WikiImage[] = [];
+  const seen = new Set<string>();
+  for (const item of data.items ?? []) {
+    if (out.length >= MAX_IMAGES) break;
+    if (item.type !== "image" || item.showInGallery === false) continue;
+    const file = String(item.title ?? "");
+    if (!file || seen.has(file) || SKIP_FILE.test(file)) continue;
+    const srcset: { src: string; scale: string }[] = item.srcset ?? [];
+    // Prefer the 2x rendition (~640px) for sharp display on phones.
+    const pick =
+      srcset.find((s) => s.scale === "2x") ?? srcset[srcset.length - 1] ?? srcset[0];
+    if (!pick?.src) continue;
+    seen.add(file);
+    out.push({
+      src: pick.src.startsWith("//") ? `https:${pick.src}` : pick.src,
+      caption: String(item.caption?.text ?? "").trim(),
+      credit: `https://en.wikipedia.org/wiki/${encodeURIComponent(file.replace(/ /g, "_"))}`,
+    });
+  }
+  return out;
 }

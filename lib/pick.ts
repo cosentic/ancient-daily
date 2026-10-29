@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { GROUPS, fetchArticle, isOffTopic } from "@/lib/wiki";
+import { GROUPS, fetchArticle, isOffTopic, type WikiImage } from "@/lib/wiki";
 import { summarize } from "@/lib/summarize";
 
 export type Picked = {
@@ -8,6 +8,7 @@ export type Picked = {
   url: string;
   lead: string;
   summary: string;
+  images: WikiImage[];
   skipped: string[];
 };
 
@@ -73,6 +74,7 @@ export async function pickAndSummarize(supabase: SupabaseClient): Promise<Picked
     url: article.url,
     lead: article.lead,
     summary,
+    images: article.images,
     skipped,
   };
 }

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { fetchImages } from "@/lib/wiki";
 import ArticleView, { type Article } from "./ArticleView";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +19,7 @@ export default async function Home() {
   try {
     const { data } = await db()
       .from("daily_articles")
-      .select("day, grp, title, url, summary")
+      .select("day, grp, title, url, summary, images")
       .order("day", { ascending: false })
       .limit(8);
     rows = (data as Row[]) ?? [];
@@ -26,9 +27,15 @@ export default async function Home() {
     rows = [];
   }
 
+  // Articles saved before images were added: fetch them live for today's.
+  const today = rows[0];
+  if (today && !today.images) {
+    today.images = await fetchImages(today.title).catch(() => []);
+  }
+
   return (
     <main>
-      <ArticleView initial={rows[0] ?? null} />
+      <ArticleView initial={today ?? null} />
 
       {rows.length > 1 && (
         <section className="past">

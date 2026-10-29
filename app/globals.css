@@ -34,6 +34,26 @@ p { margin: 0 0 1.1em; font-size: 18px; }
 .fact { border-top: 1px solid var(--rule); padding-top: 16px; font-style: italic; }
 a { color: var(--accent); }
 .more { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 15px; margin-top: 28px; }
+figure { margin: 0; }
+figure img { display: block; width: 100%; height: auto; background: var(--rule); }
+figcaption {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px; line-height: 1.45; color: var(--muted); margin-top: 8px;
+}
+.hero { margin: 0 0 28px; }
+.hero img { max-height: 70vh; object-fit: contain; border-radius: 4px; }
+.gallery {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 16px; margin: 32px 0 8px;
+}
+.thumb img { aspect-ratio: 4 / 3; object-fit: cover; border-radius: 4px; }
+.thumb figcaption {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.credit {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 12px !important; color: var(--muted); margin: 12px 0 0 !important;
+}
 .preview-bar {
   display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
   margin: 0 0 28px; padding-bottom: 20px; border-bottom: 1px dashed var(--rule);

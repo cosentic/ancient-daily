@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { GROUPS, fetchArticle, isOffTopic, type WikiImage } from "@/lib/wiki";
 import { summarize, gistOf } from "@/lib/summarize";
+import { BLOCKED_TITLE } from "@/lib/article";
 
 export type Picked = {
   grp: string;
@@ -56,7 +57,7 @@ export async function pickTitle(
   for (let attempt = 0; attempt < 10 && !picked; attempt++) {
     const candidate = await pickOnce();
     if (!candidate) break;
-    if (await isOffTopic(candidate.title)) {
+    if (BLOCKED_TITLE.test(candidate.title) || (await isOffTopic(candidate.title))) {
       skipped.push(candidate.title);
       await supabase
         .from("pool_excluded")

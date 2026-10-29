@@ -61,7 +61,11 @@ export async function recentDaily(limit = 8) {
 
 const usable = (s?: string | null) => !!s && !SELF_REFERENCE.test(s);
 
+/** Titles that mention sex or sexuality are never shown (same rule as the pool_kept view). */
+export const BLOCKED_TITLE = /\bsex(es|ual|uality|ually)?\b|\w+sexual\w*/i;
+
 async function header(title: string): Promise<Header | null> {
+  if (BLOCKED_TITLE.test(title)) return null; // page shows "not found"
   const supabase = db();
   const [{ data: daily }, { data: cached }] = await Promise.all([
     supabase

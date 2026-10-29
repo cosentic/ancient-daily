@@ -40,10 +40,15 @@ export async function GET(req: Request) {
   }
   const [poolRows, metaRows] = await Promise.all([
     all<{ title: string }>("pool", "title"),
-    all<{ title: string; classified_at: string }>("pool_meta", "title, classified_at"),
+    all<{ title: string; classified_at: string; views_per_day: number }>(
+      "pool_meta",
+      "title, classified_at, views_per_day",
+    ),
   ]);
   const fresh = new Set(
     metaRows
+      // 0 views usually means the page-view fetch failed; recheck those daily.
+      .filter((m) => Number(m.views_per_day) > 0)
       .filter((m) => new Date(m.classified_at) >= new Date(staleBefore))
       .map((m) => m.title),
   );

@@ -107,8 +107,9 @@ function parseGist(text: string): string[] | null {
   const bullets = text
     .split(/\n+/)
     .map((l) => l.trim())
-    .filter((l) => /^[-•*]\s+/.test(l))
-    .map((l) => l.replace(/^[-•*]\s+/, "").trim())
+    // Accept "- ", "• ", "* ", "1. ", "1) " bullets.
+    .filter((l) => /^([-•*–]|\d+[.)])\s+/.test(l))
+    .map((l) => l.replace(/^([-•*–]|\d+[.)])\s+/, "").replace(/\*\*/g, "").trim())
     .filter(Boolean);
   if (bullets.length < 2) return null;
   return bullets.slice(0, 3);
@@ -141,14 +142,20 @@ export async function gistOf(title: string, source: string): Promise<string[] | 
       .join("")
       .trim();
   };
+  const ok = (b: string[] | null): b is string[] =>
+    !!b && !b.some((x) => SELF_REFERENCE.test(x));
   try {
-    let bullets = parseGist(await ask());
-    if (!bullets || bullets.some((b) => SELF_REFERENCE.test(b))) {
-      bullets = parseGist(
-        await ask(" Exactly 2 or 3 lines starting with \"- \". Never mention the article or source."),
-      );
+    let raw = await ask();
+    let bullets = parseGist(raw);
+    if (!ok(bullets)) {
+      console.warn(`[gist] rejected first try for "${title}": ${JSON.stringify(raw).slice(0, 400)}`);
+      raw = await ask(" Exactly 2 or 3 lines starting with \"- \". Never mention the article or source.");
+      bullets = parseGist(raw);
     }
-    if (!bullets || bullets.some((b) => SELF_REFERENCE.test(b))) return null;
+    if (!ok(bullets)) {
+      console.warn(`[gist] giving up for "${title}": ${JSON.stringify(raw).slice(0, 400)}`);
+      return null;
+    }
     return bullets;
   } catch (e) {
     console.error("[gist] Claude call failed:", e);

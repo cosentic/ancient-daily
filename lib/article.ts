@@ -2,7 +2,7 @@
 // otherwise fetch + summarize once and cache it.
 
 import { db } from "@/lib/db";
-import { fetchArticle } from "@/lib/wiki";
+import { GROUPS, fetchArticle } from "@/lib/wiki";
 import { summarize } from "@/lib/summarize";
 import type { WikiImage } from "@/lib/wiki";
 
@@ -42,19 +42,19 @@ export async function loadArticle(title: string): Promise<Loaded | null> {
 
   // Only summarize titles that are in the pool, so the route can't be used
   // to run Claude on arbitrary Wikipedia pages.
-  const { data: inPool } = await supabase
-    .from("pool")
-    .select("grp")
-    .eq("title", title)
-    .limit(1)
-    .maybeSingle();
-  if (!inPool) return null;
+  const { data: groups } = await supabase.from("pool").select("grp").eq("title", title);
+  if (!groups?.length) return null;
+  // An article can sit in several groups (Caracalla: Greece & Rome and Ancient
+  // Britain); label it with the first one in GROUPS order.
+  const order = Object.keys(GROUPS);
+  const rank = (g: string) => (order.indexOf(g) === -1 ? 99 : order.indexOf(g));
+  const grp = groups.map((g) => g.grp as string).sort((a, b) => rank(a) - rank(b))[0];
 
   const article = await fetchArticle(title);
   if (!article.body && !article.lead) return null;
   const summary = await summarize(article.title, article.body, article.lead);
   const loaded: Loaded = {
-    grp: inPool.grp,
+    grp,
     // Keep the pool's title as the key so links resolve to this cache row.
     title,
     url: article.url,

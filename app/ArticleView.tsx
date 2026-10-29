@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { articleHref, splitParas, type Seg } from "@/lib/paras";
 
 export type Img = { src: string; width?: number; height?: number; caption: string; credit: string };
 
@@ -11,6 +13,8 @@ export type Article = {
   url: string;
   summary: string;
   images?: Img[] | null;
+  /** Summary paragraphs with links to other pool articles (computed on the server). */
+  linked?: Seg[][];
 };
 
 function Figure({ img, className }: { img: Img; className: string }) {
@@ -24,6 +28,22 @@ function Figure({ img, className }: { img: Img; className: string }) {
   );
 }
 
+function Para({ segs, className }: { segs: Seg[]; className?: string }) {
+  return (
+    <p className={className}>
+      {segs.map((s, i) =>
+        typeof s === "string" ? (
+          s
+        ) : (
+          <Link key={i} href={articleHref(s.title)} className="xref" rel="nofollow">
+            {s.text}
+          </Link>
+        ),
+      )}
+    </p>
+  );
+}
+
 function formatDay(day: string) {
   return new Date(`${day}T12:00:00`).toLocaleDateString("en-US", {
     weekday: "long",
@@ -32,13 +52,19 @@ function formatDay(day: string) {
   });
 }
 
-export default function ArticleView({ initial }: { initial: Article | null }) {
+export default function ArticleView({
+  initial,
+  mode = "home",
+}: {
+  initial: Article | null;
+  mode?: "home" | "article";
+}) {
   const [article, setArticle] = useState<Article | null>(initial);
   const [isPreview, setIsPreview] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // TEMPORARY: "Try another" cycles random articles without saving them.
+  // TEMPORARY: "Try another" cycles random articles without changing today's pick.
   async function tryAnother() {
     setLoading(true);
     setError(null);
@@ -56,12 +82,12 @@ export default function ArticleView({ initial }: { initial: Article | null }) {
     }
   }
 
-  const button = (
+  const bar = (
     <div className="preview-bar">
       <button onClick={tryAnother} disabled={loading}>
         {loading ? "Finding an article…" : "Try another article"}
       </button>
-      {isPreview && initial && (
+      {mode === "home" && isPreview && initial && (
         <button
           className="link"
           onClick={() => {
@@ -72,6 +98,11 @@ export default function ArticleView({ initial }: { initial: Article | null }) {
           Back to today’s
         </button>
       )}
+      {mode === "article" && (
+        <Link href="/" className="home-link">
+          ← Today’s article
+        </Link>
+      )}
       {error && <span className="err">{error}</span>}
     </div>
   );
@@ -79,7 +110,7 @@ export default function ArticleView({ initial }: { initial: Article | null }) {
   if (!article) {
     return (
       <>
-        {button}
+        {bar}
         <p className="kicker">Ancient Daily</p>
         <h1>No article yet</h1>
         <p>The first one arrives after the daily job runs.</p>
@@ -87,24 +118,26 @@ export default function ArticleView({ initial }: { initial: Article | null }) {
     );
   }
 
-  const paras = article.summary.split(/\n+/).filter(Boolean);
-  const fact = paras.find((p) => p.startsWith("Surprising fact:"));
-  const body = paras.filter((p) => p !== fact);
+  const paras: Seg[][] = article.linked ?? splitParas(article.summary).map((p) => [p]);
+  const text = (segs: Seg[]) => segs.map((s) => (typeof s === "string" ? s : s.text)).join("");
+  const factIndex = paras.findIndex((segs) => text(segs).startsWith("Surprising fact:"));
   const images = article.images ?? [];
   const [hero, ...gallery] = images;
+  const label = isPreview ? "Preview" : article.day ? formatDay(article.day) : null;
 
   return (
     <div className={loading ? "dim" : undefined}>
-      {button}
+      {bar}
       <p className="kicker">
-        {isPreview || !article.day ? "Preview" : formatDay(article.day)} · <span>{article.grp}</span>
+        {label && <>{label} · </>}
+        <span>{article.grp}</span>
       </p>
       <h1>{article.title}</h1>
       {hero && <Figure img={hero} className="hero" />}
-      {body.map((p, i) => (
-        <p key={i}>{p}</p>
-      ))}
-      {fact && <p className="fact">{fact}</p>}
+      {paras.map((segs, i) =>
+        i === factIndex ? null : <Para key={i} segs={segs} />,
+      )}
+      {factIndex >= 0 && <Para segs={paras[factIndex]} className="fact" />}
       {gallery.length > 0 && (
         <div className="gallery">
           {gallery.map((img) => (

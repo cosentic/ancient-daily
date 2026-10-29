@@ -8,6 +8,22 @@ export function db() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
+/** All rows of a table or view, paging past Supabase's 1,000-row limit. */
+export async function selectAll<T>(table: string, cols: string, orderBy = "title"): Promise<T[]> {
+  const supabase = db();
+  const out: T[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(cols)
+      .order(orderBy)
+      .range(from, from + 999);
+    if (error) throw error;
+    out.push(...((data ?? []) as T[]));
+    if (!data || data.length < 1000) return out;
+  }
+}
+
 /** Vercel Cron sends `Authorization: Bearer $CRON_SECRET` when CRON_SECRET is set. */
 export function isAuthorized(req: Request) {
   const secret = process.env.CRON_SECRET;

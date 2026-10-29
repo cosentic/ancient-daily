@@ -34,6 +34,23 @@ p { margin: 0 0 1.1em; font-size: 18px; }
 .fact { border-top: 1px solid var(--rule); padding-top: 16px; font-style: italic; }
 a { color: var(--accent); }
 .more { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 15px; margin-top: 28px; }
+/* Links to other articles in the pool, inside the summary text */
+a.xref {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+}
+a.xref:hover { color: var(--accent); }
+.home-link {
+  font-size: 15px; color: var(--accent); text-decoration: none;
+}
+.loading-title { opacity: 0.6; animation: pulse 1.4s ease-in-out infinite; }
+.loading-note { color: var(--muted); font-size: 16px; }
+@keyframes pulse { 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .loading-title { animation: none; } }
+
 figure { margin: 0; }
 figure img { display: block; width: 100%; height: auto; background: var(--rule); }
 figcaption {

@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { fetchImages } from "@/lib/wiki";
+import { linkify } from "@/lib/links";
 import ArticleView, { type Article } from "./ArticleView";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +33,7 @@ export default async function Home() {
   if (today && !today.images) {
     today.images = await fetchImages(today.title).catch(() => []);
   }
+  if (today) today.linked = await linkify(today.summary, today.title);
 
   return (
     <main>

@@ -3,7 +3,7 @@
 
 import { db } from "@/lib/db";
 import { GROUPS, fetchArticle } from "@/lib/wiki";
-import { summarize } from "@/lib/summarize";
+import { summarize, SELF_REFERENCE } from "@/lib/summarize";
 import type { WikiImage } from "@/lib/wiki";
 
 export type Loaded = {
@@ -29,7 +29,10 @@ export async function loadArticle(title: string): Promise<Loaded | null> {
     .select("grp, title, url, summary, images")
     .eq("title", title)
     .maybeSingle();
-  if (cached?.summary) return { ...cached, images: cached.images ?? [] } as Loaded;
+  // Summaries that talk about "the article" instead of the subject get regenerated.
+  if (cached?.summary && !SELF_REFERENCE.test(cached.summary)) {
+    return { ...cached, images: cached.images ?? [] } as Loaded;
+  }
 
   const { data: daily } = await supabase
     .from("daily_articles")
@@ -38,7 +41,9 @@ export async function loadArticle(title: string): Promise<Loaded | null> {
     .order("day", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (daily?.summary) return { ...daily, images: daily.images ?? [] } as Loaded;
+  if (daily?.summary && !SELF_REFERENCE.test(daily.summary)) {
+    return { ...daily, images: daily.images ?? [] } as Loaded;
+  }
 
   // Only summarize titles that are in the pool, so the route can't be used
   // to run Claude on arbitrary Wikipedia pages.

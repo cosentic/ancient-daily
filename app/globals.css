@@ -54,6 +54,19 @@ a.xref:hover { color: var(--accent); }
 @keyframes pulse { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .loading-status { animation: none; } }
 
+.kicker-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  margin: 0 0 8px;
+}
+.kicker-row .kicker { margin: 0; }
+button.share {
+  flex: none;
+  font-family: ui-sans-serif, system-ui, sans-serif; font-size: 14px;
+  color: var(--accent); background: none; cursor: pointer;
+  border: 1px solid var(--rule); border-radius: 999px; padding: 6px 14px;
+}
+button.share:hover { border-color: var(--accent); }
+
 figure { margin: 0; }
 figure img { display: block; width: 100%; height: auto; background: var(--rule); }
 figcaption {

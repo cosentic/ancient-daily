@@ -60,13 +60,36 @@ function Para({
 }
 
 /** Same layout as app/a/[...slug]/loading.tsx. */
-function LoadingView({ title }: { title: string }) {
+function LoadingView({ title, status }: { title: string; status: string }) {
   return (
     <>
       <p className="kicker">Ancient Daily</p>
       <h1>{title}</h1>
-      <p className="loading-status">Loading article…</p>
+      <p className="loading-status">{status}</p>
     </>
+  );
+}
+
+function ShareButton({ title }: { title: string }) {
+  const [copied, setCopied] = useState(false);
+  async function share() {
+    const url = window.location.href;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `${title} · Ancient Daily`, url });
+        return;
+      }
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // User dismissed the share sheet, or clipboard was blocked: nothing to do.
+    }
+  }
+  return (
+    <button className="share" onClick={share} aria-label={`Share ${title}`}>
+      {copied ? "Link copied" : "Share"}
+    </button>
   );
 }
 
@@ -78,22 +101,18 @@ function formatDay(day: string) {
   });
 }
 
-export default function ArticleView({
-  initial,
-  mode = "home",
-}: {
-  initial: Article | null;
-  mode?: "home" | "article";
-}) {
-  const [article, setArticle] = useState<Article | null>(initial);
-  const [isPreview, setIsPreview] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // Title of a linked article being opened: show its loading screen right away
-  // instead of relying on Next.js having prefetched the route's loading state.
-  const [opening, setOpening] = useState<string | null>(null);
+export default function ArticleView({ article, isToday }: { article: Article; isToday: boolean }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  // While navigating: what to show instead of the article (title + status line).
+  const [pending, setPending] = useState<{ title: string; status: string } | null>(null);
+
+  function go(title: string) {
+    setPending({ title, status: "Loading article…" });
+    window.scrollTo({ top: 0 });
+    startTransition(() => router.push(articleHref(title)));
+  }
 
   function openArticle(title: string, e: React.MouseEvent<HTMLAnchorElement>) {
     // Let modified clicks (new tab/window) behave normally.
@@ -101,14 +120,28 @@ export default function ArticleView({
       return;
     }
     e.preventDefault();
-    setOpening(title);
-    window.scrollTo({ top: 0 });
-    startTransition(() => router.push(articleHref(title)));
+    go(title);
   }
 
-  // If the user comes back (browser back button), drop the loading state.
+  // TEMPORARY: "Try another" opens a random article at its own URL.
+  async function tryAnother() {
+    setError(null);
+    setPending({ title: "Finding an article…", status: "Picking something from the archive" });
+    window.scrollTo({ top: 0 });
+    try {
+      const res = await fetch("/api/preview", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
+      go(data.title as string); // already summarized and cached, so this loads instantly
+    } catch (e) {
+      setPending(null);
+      setError(e instanceof Error ? e.message : "Something went wrong");
+    }
+  }
+
+  // Coming back via the browser's back button: drop the loading state.
   useEffect(() => {
-    const reset = () => setOpening(null);
+    const reset = () => setPending(null);
     window.addEventListener("pageshow", reset);
     window.addEventListener("popstate", reset);
     return () => {
@@ -117,76 +150,32 @@ export default function ArticleView({
     };
   }, []);
 
-  if (opening) return <LoadingView title={opening} />;
-
-  // TEMPORARY: "Try another" cycles random articles without changing today's pick.
-  async function tryAnother() {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/preview", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
-      setArticle(data);
-      setIsPreview(true);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const bar = (
-    <div className="preview-bar">
-      <button onClick={tryAnother} disabled={loading}>
-        {loading ? "Finding an article…" : "Try another article"}
-      </button>
-      {mode === "home" && isPreview && initial && (
-        <button
-          className="link"
-          onClick={() => {
-            setArticle(initial);
-            setIsPreview(false);
-          }}
-        >
-          Back to today’s
-        </button>
-      )}
-      {mode === "article" && (
-        <Link href="/" className="home-link">
-          ← Today’s article
-        </Link>
-      )}
-      {error && <span className="err">{error}</span>}
-    </div>
-  );
-
-  if (!article) {
-    return (
-      <>
-        {bar}
-        <p className="kicker">Ancient Daily</p>
-        <h1>No article yet</h1>
-        <p>The first one arrives after the daily job runs.</p>
-      </>
-    );
-  }
+  if (pending) return <LoadingView title={pending.title} status={pending.status} />;
 
   const paras: Seg[][] = article.linked ?? splitParas(article.summary).map((p) => [p]);
   const text = (segs: Seg[]) => segs.map((s) => (typeof s === "string" ? s : s.text)).join("");
   const factIndex = paras.findIndex((segs) => text(segs).startsWith("Surprising fact:"));
   const images = article.images ?? [];
   const [hero, ...gallery] = images;
-  const label = isPreview ? "Preview" : article.day ? formatDay(article.day) : null;
 
   return (
-    <div className={loading ? "dim" : undefined}>
-      {bar}
-      <p className="kicker">
-        {label && <>{label} · </>}
-        <span>{article.grp}</span>
-      </p>
+    <div>
+      <div className="preview-bar">
+        <button onClick={tryAnother}>Try another article</button>
+        {!isToday && (
+          <Link href="/" className="home-link">
+            ← Today’s article
+          </Link>
+        )}
+        {error && <span className="err">{error}</span>}
+      </div>
+      <div className="kicker-row">
+        <p className="kicker">
+          {article.day && <>{formatDay(article.day)} · </>}
+          <span>{article.grp}</span>
+        </p>
+        <ShareButton title={article.title} />
+      </div>
       <h1>{article.title}</h1>
       {hero && <Figure img={hero} className="hero" />}
       {paras.map((segs, i) =>

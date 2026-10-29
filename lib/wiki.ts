@@ -188,8 +188,33 @@ export function isModern(cats: string[]) {
       /^Category:(\d{4}) (novels|novellas|short stories|books|poems|plays|films|manga|comics|anime|songs|albums|video games|television|operas|paintings|sculptures)\b/,
     );
     if (work) return Number(work[1]) >= 1500;
+    // Modern buildings and foundations: "Houses completed in 1925",
+    // "Buildings and structures completed in 1923", "1994 establishments in Mexico"
+    const built = c.match(/ completed in (\d{4})$/);
+    if (built) return Number(built[1]) >= 1500;
+    const founded = c.match(/^Category:(\d{4}) establishments\b/);
+    if (founded) return Number(founded[1]) >= 1500;
     return false;
   });
+}
+
+/**
+ * True for present-day places (countries, cities, states, communes) as opposed
+ * to ancient sites. "Cities in France" → modern; "Archaeological sites in
+ * Mexico" or anything mentioning ancient/former/ruins → ancient, kept.
+ */
+export function isPresentDayPlace(cats: string[]) {
+  const ancient = cats.some((c) =>
+    /archaeolog|ancient|former |ruins|prehistoric|roman |iron age|bronze age|classical|pre-columbian|maya|aztec/i.test(
+      c,
+    ),
+  );
+  if (ancient) return false;
+  return cats.some((c) =>
+    /^Category:(Communes|Municipalities|Cities|Towns|Prefectures|Capitals|Countries|Member states|States|Regions|Provinces|Departments|Counties|Populated places)( and [a-z ]+)? (of|in) /.test(
+      c,
+    ),
+  );
 }
 
 /** Short lead + URL from the REST API, plus the full plain-text body. */

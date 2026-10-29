@@ -1,7 +1,7 @@
 // Classifies pool titles by what they are (Wikidata "instance of", following
 // subclasses) and how popular they are (Wikipedia page views).
 
-import { api, HEADERS, isModern } from "@/lib/wiki";
+import { api, HEADERS, isModern, isPresentDayPlace } from "@/lib/wiki";
 
 export type Kind =
   | "person"
@@ -120,7 +120,10 @@ async function wikiInfo(titles: string[]) {
     Object.assign(params, data.continue);
   }
 
-  const out = new Map<string, { qid: string | null; views: number; modern: boolean }>();
+  const out = new Map<
+    string,
+    { qid: string | null; views: number; modern: boolean; presentDay: boolean }
+  >();
   for (const t of titles) {
     const norm = normalized.get(t) ?? t;
     const final = redirects.get(norm) ?? norm;
@@ -131,6 +134,7 @@ async function wikiInfo(titles: string[]) {
       qid: p?.qid ?? null,
       views: Math.round(views * 10) / 10,
       modern: isModern(p?.cats ?? []),
+      presentDay: isPresentDayPlace(p?.cats ?? []),
     });
   }
   return out;
@@ -205,6 +209,9 @@ export async function classifyBatch(titles: string[]): Promise<Meta[]> {
       return { title, qid: i.qid, kind: "other", classes: ["modern"], views_per_day: i.views };
     }
     const { kind, labels } = kindOf(i.qid ? classes.get(i.qid) : undefined, !!i.qid);
+    if (kind === "place" && i.presentDay) {
+      return { title, qid: i.qid, kind: "other", classes: ["present-day place"], views_per_day: i.views };
+    }
     return { title, qid: i.qid, kind, classes: labels, views_per_day: i.views };
   });
 }

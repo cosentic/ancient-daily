@@ -141,8 +141,14 @@ function content(title: string): { summary: Promise<string>; gist: Promise<strin
   const gist = Promise.all([h, body]).then(async ([hd, text]) => {
     if (!hd) return null;
     if (hd.gist?.length) return hd.gist;
-    // Older saved article: write the gist from its summary (short, cheap).
-    if (hd.summary) return gistOf(hd.title, hd.summary);
+    // Older saved article: write the gist from its summary (short, cheap),
+    // falling back to the full Wikipedia text if that doesn't work.
+    if (hd.summary) {
+      const fromSummary = await gistOf(hd.title, hd.summary);
+      if (fromSummary) return fromSummary;
+      const full = await fetchBody(title).catch(() => "");
+      return full ? gistOf(hd.title, full) : null;
+    }
     if (!text && !hd.lead) return null;
     return gistOf(hd.title, text || hd.lead);
   });

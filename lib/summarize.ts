@@ -126,7 +126,7 @@ export async function gistOf(title: string, source: string): Promise<string[] | 
   const ask = async (extra = "") => {
     const msg = await client.messages.create({
       model: "claude-haiku-5-5",
-      max_tokens: 400,
+      max_tokens: 1500,
       system: GIST_SYSTEM,
       messages: [
         {
@@ -137,10 +137,17 @@ export async function gistOf(title: string, source: string): Promise<string[] | 
         },
       ],
     });
-    return msg.content
+    const text = msg.content
       .map((b) => (b.type === "text" ? b.text : ""))
       .join("")
       .trim();
+    if (!text) {
+      console.warn(
+        `[gist] empty response for "${title}": stop=${msg.stop_reason}, ` +
+          `blocks=${msg.content.map((b) => b.type).join(",") || "none"}, out=${msg.usage?.output_tokens}`,
+      );
+    }
+    return text;
   };
   const ok = (b: string[] | null): b is string[] =>
     !!b && !b.some((x) => SELF_REFERENCE.test(x));

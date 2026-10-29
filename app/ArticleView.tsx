@@ -77,10 +77,13 @@ function formatDay(day: string) {
 export default function ArticleView({
   article,
   isToday,
+  gist,
   body,
 }: {
   article: ArticleHeader;
   isToday: boolean;
+  /** "The Gist" box; streamed in by the server. */
+  gist: React.ReactNode;
   /** The summary; streamed in by the server after the rest of the page. */
   body: React.ReactNode;
 }) {
@@ -161,6 +164,7 @@ export default function ArticleView({
         <ShareButton title={article.title} />
       </div>
       <h1>{article.title}</h1>
+      {gist}
       {hero && <Figure img={hero} className="hero" />}
       {body}
       {gallery.length > 0 && (

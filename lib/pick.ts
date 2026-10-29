@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { GROUPS, fetchArticle, isOffTopic, type WikiImage } from "@/lib/wiki";
-import { summarize } from "@/lib/summarize";
+import { summarize, gistOf } from "@/lib/summarize";
 
 export type Picked = {
   grp: string;
@@ -8,6 +8,7 @@ export type Picked = {
   url: string;
   lead: string;
   summary: string;
+  gist: string[] | null;
   images: WikiImage[];
   skipped: string[];
 };
@@ -75,13 +76,18 @@ export async function pickAndSummarize(supabase: SupabaseClient): Promise<Picked
   if (!picked) return null;
   const { skipped } = picked;
   const article = await fetchArticle(picked.title);
-  const summary = await summarize(article.title, article.body, article.lead);
+  // Summary and The Gist in parallel.
+  const [summary, gist] = await Promise.all([
+    summarize(article.title, article.body, article.lead),
+    gistOf(article.title, article.body || article.lead),
+  ]);
   return {
     grp: picked.grp,
     title: article.title,
     url: article.url,
     lead: article.lead,
     summary,
+    gist,
     images: article.images,
     skipped,
   };

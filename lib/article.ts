@@ -1,11 +1,12 @@
-// Loads articles for /a/[title] in two stages so the page can render fast:
-//   loadHeader:  title, group, date, URL, images (+ summary if already saved)  ~0.5s
-//   loadSummary: the Claude summary, generated and cached on first visit       ~10s
+// Loads articles for /a/[title] in stages so the page can render fast:
+//   loadHeader:  title, group, date, URL, images (+ saved summary/gist)   ~0.5s
+//   loadContent: the summary and The Gist, generated in parallel and cached
+//                on a first visit (~10s), instant afterwards
 
 import { cache } from "react";
 import { db } from "@/lib/db";
 import { GROUPS, fetchBody, fetchHeader, fetchImages } from "@/lib/wiki";
-import { summarize, SELF_REFERENCE } from "@/lib/summarize";
+import { summarize, gistOf, SELF_REFERENCE } from "@/lib/summarize";
 import type { WikiImage } from "@/lib/wiki";
 
 export type Header = {
@@ -18,6 +19,9 @@ export type Header = {
   day?: string;
   /** Present when a usable summary is already saved. */
   summary?: string;
+  gist?: string[] | null;
+  /** Where the saved summary lives, so a missing gist can be added to the same row. */
+  savedIn?: "cache" | "daily";
 };
 
 export async function saveToCache(a: {
@@ -26,6 +30,7 @@ export async function saveToCache(a: {
   url: string;
   summary: string;
   images: WikiImage[];
+  gist?: string[] | null;
 }) {
   const { error } = await db()
     .from("article_cache")
@@ -61,14 +66,14 @@ async function header(title: string): Promise<Header | null> {
   const [{ data: daily }, { data: cached }] = await Promise.all([
     supabase
       .from("daily_articles")
-      .select("day, grp, title, url, lead, summary, images")
+      .select("day, grp, title, url, lead, summary, images, gist")
       .eq("title", title)
       .order("day", { ascending: false })
       .limit(1)
       .maybeSingle(),
     supabase
       .from("article_cache")
-      .select("grp, title, url, summary, images")
+      .select("grp, title, url, summary, images, gist")
       .eq("title", title)
       .maybeSingle(),
   ]);
@@ -84,12 +89,14 @@ async function header(title: string): Promise<Header | null> {
       images: cached.images ?? [],
       day,
       summary: cached.summary,
+      gist: cached.gist,
+      savedIn: "cache",
     };
   }
   if (daily && usable(daily.summary)) {
     const images =
       daily.images ?? (await fetchImages(daily.title).catch(() => [] as WikiImage[]));
-    return { ...daily, lead: daily.lead ?? "", images, day } as Header;
+    return { ...daily, lead: daily.lead ?? "", images, day, savedIn: "daily" } as Header;
   }
 
   // New article: only titles in the pool, so the route can't be used to run
@@ -108,18 +115,61 @@ async function header(title: string): Promise<Header | null> {
   return { grp, ...h, day };
 }
 
-async function summary(title: string): Promise<string> {
-  const h = await loadHeader(title);
-  if (!h) return "";
-  if (h.summary) return h.summary;
-  const body = await fetchBody(title).catch(() => "");
-  if (!body && !h.lead) return "";
-  const text = await summarize(h.title, body, h.lead);
-  // Cache under the requested title so links to it resolve here next time.
-  await saveToCache({ title, grp: h.grp, url: h.url, summary: text, images: h.images });
-  return text;
+export const loadHeader = cache(header);
+
+/**
+ * The summary and The Gist as two separate promises, so each part of the page
+ * can render as soon as its own piece is ready. Generated in parallel and
+ * saved on a first visit; a gist missing from an older saved article is
+ * generated from its summary and added to that row.
+ */
+function content(title: string): { summary: Promise<string>; gist: Promise<string[] | null> } {
+  const h = loadHeader(title);
+
+  const body = h.then(async (hd) => {
+    if (!hd || hd.summary) return "";
+    return fetchBody(title).catch(() => "");
+  });
+
+  const summary = Promise.all([h, body]).then(async ([hd, text]) => {
+    if (!hd) return "";
+    if (hd.summary) return hd.summary;
+    if (!text && !hd.lead) return "";
+    return summarize(hd.title, text, hd.lead);
+  });
+
+  const gist = Promise.all([h, body]).then(async ([hd, text]) => {
+    if (!hd) return null;
+    if (hd.gist?.length) return hd.gist;
+    // Older saved article: write the gist from its summary (short, cheap).
+    if (hd.summary) return gistOf(hd.title, hd.summary);
+    if (!text && !hd.lead) return null;
+    return gistOf(hd.title, text || hd.lead);
+  });
+
+  // Save once both are done (not awaited by the gist, so it can show first).
+  const saved = Promise.all([h, summary, gist]).then(async ([hd, s, g]) => {
+    if (!hd || !s) return;
+    const supabase = db();
+    if (hd.savedIn === "cache" && !hd.gist?.length && g) {
+      await supabase.from("article_cache").update({ gist: g }).eq("title", title);
+    } else if (hd.savedIn === "daily" && !hd.gist?.length && g) {
+      await supabase.from("daily_articles").update({ gist: g }).eq("title", hd.title).eq("day", hd.day!);
+    } else if (!hd.savedIn) {
+      // Cache under the requested title so links to it resolve here next time.
+      await saveToCache({ title, grp: hd.grp, url: hd.url, summary: s, images: hd.images, gist: g });
+    }
+  });
+
+  return {
+    // The summary waits for the save so the response doesn't end before it's stored.
+    summary: summary.then(async (s) => {
+      await saved.catch((e) => console.warn("[content] save failed:", e));
+      return s;
+    }),
+    gist,
+  };
 }
 
-/** Deduplicated per request, so the page, its metadata and the summary share one load. */
-export const loadHeader = cache(header);
-export const loadSummary = cache(summary);
+/** Deduplicated per request, so the page, metadata, summary and gist share one load. */
+export const loadContent = cache(content);

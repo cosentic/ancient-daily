@@ -111,3 +111,26 @@ figcaption {
 .past ul { list-style: none; padding: 0; margin: 0; }
 .past li { padding: 6px 0; font-size: 16px; }
 .past time { color: var(--muted); font-family: ui-sans-serif, system-ui, sans-serif; font-size: 13px; margin-right: 10px; }
+
+/* "The Gist" box */
+.gist {
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 14px 18px 12px;
+  margin: 0 0 28px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg));
+}
+.gist h2 {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--accent); margin: 0 0 8px;
+}
+.gist ul { margin: 0; padding-left: 1.1em; }
+.gist li { font-size: 16.5px; line-height: 1.5; margin: 0 0 6px; }
+.gist li::marker { color: var(--accent); }
+.gist-loading .bar {
+  display: inline-block; height: 0.8em; border-radius: 4px; vertical-align: middle;
+  background: var(--rule); animation: pulse 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) { .gist-loading .bar { animation: none; } }

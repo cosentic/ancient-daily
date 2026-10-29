@@ -1,11 +1,12 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { loadHeader, loadSummary, recentDaily, todaysTitle } from "@/lib/article";
+import { loadContent, loadHeader, recentDaily, todaysTitle } from "@/lib/article";
 import { linkify } from "@/lib/links";
 import { articleHref, splitParas } from "@/lib/paras";
 import ArticleView from "../../ArticleView";
 import SummaryBody from "../../SummaryBody";
+import { GistBox, GistPlaceholder } from "../../GistBox";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120; // first visit summarizes the article
@@ -56,12 +57,18 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 /** Streams in after the rest of the page: instant if saved, ~10s on a first visit. */
 async function Summary({ title }: { title: string }) {
-  const [h, text] = await Promise.all([loadHeader(title), loadSummary(title)]);
+  const [h, text] = await Promise.all([loadHeader(title), loadContent(title).summary]);
   if (!text) {
     return <p className="loading-status">This article couldn’t be summarized right now.</p>;
   }
   const paras = await linkify(text, h?.title ?? title);
   return <SummaryBody paras={paras} />;
+}
+
+/** "The Gist" box; usually ready before the full summary. Omitted if it couldn't be written. */
+async function Gist({ title }: { title: string }) {
+  const bullets = await loadContent(title).gist.catch(() => null);
+  return bullets?.length ? <GistBox bullets={bullets} /> : null;
 }
 
 export default async function ArticlePage({ params }: Props) {
@@ -82,6 +89,11 @@ export default async function ArticlePage({ params }: Props) {
         key={title}
         article={{ grp: h.grp, title: h.title, url: h.url, images: h.images, day: h.day }}
         isToday={isToday}
+        gist={
+          <Suspense fallback={<GistPlaceholder />}>
+            <Gist title={title} />
+          </Suspense>
+        }
         body={
           <Suspense fallback={<p className="loading-status">Loading article…</p>}>
             <Summary title={title} />

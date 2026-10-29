@@ -8,7 +8,7 @@ export async function GET(req: Request) {
   const n = Math.min(Math.max(Number(new URL(req.url).searchParams.get("days")) || 1, 1), 60);
   const { data, error } = await db()
     .from("daily_articles")
-    .select("day, grp, title, url, summary, images")
+    .select("day, grp, title, url, summary, images, gist")
     .order("day", { ascending: false })
     .limit(n);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

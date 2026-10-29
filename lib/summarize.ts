@@ -85,3 +85,73 @@ export async function summarize(title: string, body: string, lead: string) {
     return lead;
   }
 }
+
+// ---------------------------------------------------------------------------
+// "The Gist": 2–3 very short bullets shown in a box at the top of the article.
+
+const GIST_SYSTEM = `You write "The Gist": an at-a-glance summary of one subject from the ancient world, for a curious general reader who may read nothing else.
+
+Write 2 or 3 bullet points. Each bullet:
+- is one short sentence of at most 15 words,
+- states a concrete fact (who/what/where/when, what happened, why it matters),
+- does not repeat another bullet.
+
+Order: what it is first, then the most important or memorable facts.
+
+Voice: state facts directly about the subject. Never mention "the article", "the source", "the text", "this summary" or Wikipedia.
+
+Output only the bullets, one per line, each starting with "- ". No heading, no intro, no closing line.`;
+
+/** Parses "- bullet" lines; returns 2–3 clean bullets or null. */
+function parseGist(text: string): string[] | null {
+  const bullets = text
+    .split(/\n+/)
+    .map((l) => l.trim())
+    .filter((l) => /^[-•*]\s+/.test(l))
+    .map((l) => l.replace(/^[-•*]\s+/, "").trim())
+    .filter(Boolean);
+  if (bullets.length < 2) return null;
+  return bullets.slice(0, 3);
+}
+
+/**
+ * 2–3 bullet points about the subject. `source` can be the Wikipedia text or
+ * an existing summary (for articles saved before The Gist existed).
+ * Returns null on failure; the page then simply omits the box.
+ */
+export async function gistOf(title: string, source: string): Promise<string[] | null> {
+  if (!process.env.ANTHROPIC_API_KEY || !source) return null;
+  const client = new Anthropic();
+  const ask = async (extra = "") => {
+    const msg = await client.messages.create({
+      model: "claude-haiku-5-5",
+      max_tokens: 400,
+      system: GIST_SYSTEM,
+      messages: [
+        {
+          role: "user",
+          content:
+            `<subject>${title}</subject>\n\n<source_material>\n${source.slice(0, 40000)}\n</source_material>\n\n` +
+            `Write The Gist for ${title}.${extra}`,
+        },
+      ],
+    });
+    return msg.content
+      .map((b) => (b.type === "text" ? b.text : ""))
+      .join("")
+      .trim();
+  };
+  try {
+    let bullets = parseGist(await ask());
+    if (!bullets || bullets.some((b) => SELF_REFERENCE.test(b))) {
+      bullets = parseGist(
+        await ask(" Exactly 2 or 3 lines starting with \"- \". Never mention the article or source."),
+      );
+    }
+    if (!bullets || bullets.some((b) => SELF_REFERENCE.test(b))) return null;
+    return bullets;
+  } catch (e) {
+    console.error("[gist] Claude call failed:", e);
+    return null;
+  }
+}

@@ -227,25 +227,21 @@ export function isPresentDayPlace(cats: string[]) {
   );
 }
 
-/** Short lead + URL from the REST API, plus the full plain-text body. */
-export async function fetchArticle(title: string) {
+/**
+ * The fast part of an article (~0.5s): display title, URL, Wikipedia's intro
+ * paragraph and images. Enough to render the page before the summary exists.
+ */
+export async function fetchHeader(title: string) {
   const slug = encodeURIComponent(title.replace(/ /g, "_"));
-  const sumRes = await fetch(`${REST}/page/summary/${slug}`, {
-    headers: HEADERS,
-    cache: "no-store",
-  });
-  const summary: any = sumRes.ok ? await sumRes.json() : {};
-  const full = await api({
-    action: "query",
-    prop: "extracts",
-    explaintext: 1,
-    redirects: 1,
-    titles: title,
-  });
-  const images = await fetchImages(title).catch((e) => {
-    console.warn(`[images] ${title}: ${e instanceof Error ? e.message : e}`);
-    return [] as WikiImage[];
-  });
+  const [summary, images] = await Promise.all([
+    fetch(`${REST}/page/summary/${slug}`, { headers: HEADERS, cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : {}))
+      .catch(() => ({})) as Promise<any>,
+    fetchImages(title).catch((e) => {
+      console.warn(`[images] ${title}: ${e instanceof Error ? e.message : e}`);
+      return [] as WikiImage[];
+    }),
+  ]);
   // Fall back to the summary's lead image if the media list had nothing usable.
   if (!images.length && summary.originalimage?.source) {
     images.push({
@@ -262,9 +258,26 @@ export async function fetchArticle(title: string) {
       (summary.content_urls?.desktop?.page as string) ??
       `https://en.wikipedia.org/wiki/${slug}`,
     lead: (summary.extract as string) ?? "",
-    body: (full.query?.pages?.[0]?.extract as string) ?? "",
     images,
   };
+}
+
+/** The full plain-text article, for summarizing. */
+export async function fetchBody(title: string) {
+  const full = await api({
+    action: "query",
+    prop: "extracts",
+    explaintext: 1,
+    redirects: 1,
+    titles: title,
+  });
+  return (full.query?.pages?.[0]?.extract as string) ?? "";
+}
+
+/** Header + full text together (used by the daily job). */
+export async function fetchArticle(title: string) {
+  const [header, body] = await Promise.all([fetchHeader(title), fetchBody(title)]);
+  return { ...header, body };
 }
 
 export type WikiImage = {

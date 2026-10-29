@@ -1,9 +1,11 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { loadArticle, recentDaily, todaysTitle } from "@/lib/article";
+import { loadHeader, loadSummary, recentDaily, todaysTitle } from "@/lib/article";
 import { linkify } from "@/lib/links";
 import { articleHref, splitParas } from "@/lib/paras";
 import ArticleView from "../../ArticleView";
+import SummaryBody from "../../SummaryBody";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120; // first visit summarizes the article
@@ -31,16 +33,17 @@ function formatDay(day: string) {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const title = titleFrom(slug);
-  const article = await loadArticle(title).catch(() => null);
-  const first = article ? (splitParas(article.summary)[0] ?? "") : "";
+  const h = await loadHeader(title).catch(() => null);
+  // Use the saved summary's first paragraph if there is one, else Wikipedia's intro.
+  const first = h?.summary ? (splitParas(h.summary)[0] ?? "") : (h?.lead ?? "");
   const description = first.length > 200 ? `${first.slice(0, 197).trimEnd()}…` : first;
-  const image = article?.images?.[0]?.src;
+  const image = h?.images?.[0]?.src;
   return {
-    title: `${article?.title ?? title} · Ancient Daily`,
+    title: `${h?.title ?? title} · Ancient Daily`,
     description: description || undefined,
     alternates: { canonical: articleHref(title) },
     openGraph: {
-      title: article?.title ?? title,
+      title: h?.title ?? title,
       description: description || undefined,
       url: articleHref(title),
       images: image ? [{ url: image }] : undefined,
@@ -51,22 +54,40 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
+/** Streams in after the rest of the page: instant if saved, ~10s on a first visit. */
+async function Summary({ title }: { title: string }) {
+  const [h, text] = await Promise.all([loadHeader(title), loadSummary(title)]);
+  if (!text) {
+    return <p className="loading-status">This article couldn’t be summarized right now.</p>;
+  }
+  const paras = await linkify(text, h?.title ?? title);
+  return <SummaryBody paras={paras} />;
+}
+
 export default async function ArticlePage({ params }: Props) {
   const { slug } = await params;
   const title = titleFrom(slug);
-  const [article, today, recent] = await Promise.all([
-    loadArticle(title),
+  const [h, today, recent] = await Promise.all([
+    loadHeader(title),
     todaysTitle().catch(() => null),
     recentDaily(8).catch(() => []),
   ]);
-  if (!article) notFound();
-  const linked = await linkify(article.summary, article.title);
-  const isToday = today === title || today === article.title;
-  const previously = recent.filter((r) => r.title !== title && r.title !== article.title).slice(0, 7);
+  if (!h) notFound();
+  const isToday = today === title || today === h.title;
+  const previously = recent.filter((r) => r.title !== title && r.title !== h.title).slice(0, 7);
 
   return (
     <main>
-      <ArticleView key={title} article={{ ...article, linked }} isToday={isToday} />
+      <ArticleView
+        key={title}
+        article={{ grp: h.grp, title: h.title, url: h.url, images: h.images, day: h.day }}
+        isToday={isToday}
+        body={
+          <Suspense fallback={<p className="loading-status">Loading article…</p>}>
+            <Summary title={title} />
+          </Suspense>
+        }
+      />
 
       {previously.length > 0 && (
         <section className="past">

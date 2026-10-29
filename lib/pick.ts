@@ -23,10 +23,11 @@ function shuffle<T>(a: T[]) {
 /**
  * Random group, then a random unseen title in it. Skips (and permanently
  * excludes) modern biographies and list pages; allows repeats only once
- * everything has been seen. Fetches and summarizes the winner.
- * Returns null if the pool is empty. Does NOT save anything to daily_articles.
+ * everything has been seen. Fast: no summarizing. Returns null if the pool is empty.
  */
-export async function pickAndSummarize(supabase: SupabaseClient): Promise<Picked | null> {
+export async function pickTitle(
+  supabase: SupabaseClient,
+): Promise<{ grp: string; title: string; skipped: string[] } | null> {
   const { data: groups, error } = await supabase
     .from("pool_groups")
     .select("grp")
@@ -65,7 +66,14 @@ export async function pickAndSummarize(supabase: SupabaseClient): Promise<Picked
   }
   if (skipped.length) console.log(`[pick] skipped off-topic: ${skipped.join(", ")}`);
   if (!picked) return null;
+  return { ...picked, skipped };
+}
 
+/** pickTitle, then fetch and summarize it (the daily job). Saves nothing. */
+export async function pickAndSummarize(supabase: SupabaseClient): Promise<Picked | null> {
+  const picked = await pickTitle(supabase);
+  if (!picked) return null;
+  const { skipped } = picked;
   const article = await fetchArticle(picked.title);
   const summary = await summarize(article.title, article.body, article.lead);
   return {

@@ -1,22 +1,25 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { createContext, useContext, useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { articleHref, splitParas, type Seg } from "@/lib/paras";
+import { articleHref } from "@/lib/paras";
 
 export type Img = { src: string; width?: number; height?: number; caption: string; credit: string };
 
-export type Article = {
+export type ArticleHeader = {
   day?: string;
   grp: string;
   title: string;
   url: string;
-  summary: string;
   images?: Img[] | null;
-  /** Summary paragraphs with links to other pool articles (computed on the server). */
-  linked?: Seg[][];
 };
+
+/** Lets the summary's links (rendered separately) open articles through this view. */
+const NavContext = createContext<(title: string, e: React.MouseEvent<HTMLAnchorElement>) => void>(
+  () => {},
+);
+export const useOpenArticle = () => useContext(NavContext);
 
 function Figure({ img, className }: { img: Img; className: string }) {
   return (
@@ -29,43 +32,13 @@ function Figure({ img, className }: { img: Img; className: string }) {
   );
 }
 
-function Para({
-  segs,
-  className,
-  onOpen,
-}: {
-  segs: Seg[];
-  className?: string;
-  onOpen: (title: string, e: React.MouseEvent<HTMLAnchorElement>) => void;
-}) {
-  return (
-    <p className={className}>
-      {segs.map((s, i) =>
-        typeof s === "string" ? (
-          s
-        ) : (
-          <Link
-            key={i}
-            href={articleHref(s.title)}
-            className="xref"
-            rel="nofollow"
-            onClick={(e) => onOpen(s.title, e)}
-          >
-            {s.text}
-          </Link>
-        ),
-      )}
-    </p>
-  );
-}
-
-/** Same layout as app/a/[...slug]/loading.tsx. */
-function LoadingView({ title, status }: { title: string; status: string }) {
+/** Same layout as app/a/[...slug]/loading.tsx: shown between tapping a link and the new page arriving. */
+function OpeningView({ title }: { title: string }) {
   return (
     <>
       <p className="kicker">Ancient Daily</p>
       <h1>{title}</h1>
-      <p className="loading-status">{status}</p>
+      <p className="loading-status">Loading article…</p>
     </>
   );
 }
@@ -101,15 +74,24 @@ function formatDay(day: string) {
   });
 }
 
-export default function ArticleView({ article, isToday }: { article: Article; isToday: boolean }) {
+export default function ArticleView({
+  article,
+  isToday,
+  body,
+}: {
+  article: ArticleHeader;
+  isToday: boolean;
+  /** The summary; streamed in by the server after the rest of the page. */
+  body: React.ReactNode;
+}) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  // While navigating: what to show instead of the article (title + status line).
-  const [pending, setPending] = useState<{ title: string; status: string } | null>(null);
+  const [opening, setOpening] = useState<string | null>(null); // title being opened
+  const [finding, setFinding] = useState(false); // "Try another" is picking a title
 
   function go(title: string) {
-    setPending({ title, status: "Loading article…" });
+    setOpening(title);
     window.scrollTo({ top: 0 });
     startTransition(() => router.push(articleHref(title)));
   }
@@ -123,25 +105,28 @@ export default function ArticleView({ article, isToday }: { article: Article; is
     go(title);
   }
 
-  // TEMPORARY: "Try another" opens a random article at its own URL.
+  // TEMPORARY: "Try another" picks a random title (~1s), then opens it.
   async function tryAnother() {
     setError(null);
-    setPending({ title: "Finding an article…", status: "Picking something from the archive" });
-    window.scrollTo({ top: 0 });
+    setFinding(true);
     try {
-      const res = await fetch("/api/preview", { method: "POST" });
+      const res = await fetch("/api/random", { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
-      go(data.title as string); // already summarized and cached, so this loads instantly
+      go(data.title as string);
     } catch (e) {
-      setPending(null);
       setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setFinding(false);
     }
   }
 
-  // Coming back via the browser's back button: drop the loading state.
+  // Coming back via the browser's back button: drop the in-between state.
   useEffect(() => {
-    const reset = () => setPending(null);
+    const reset = () => {
+      setOpening(null);
+      setFinding(false);
+    };
     window.addEventListener("pageshow", reset);
     window.addEventListener("popstate", reset);
     return () => {
@@ -150,18 +135,17 @@ export default function ArticleView({ article, isToday }: { article: Article; is
     };
   }, []);
 
-  if (pending) return <LoadingView title={pending.title} status={pending.status} />;
+  if (opening) return <OpeningView title={opening} />;
 
-  const paras: Seg[][] = article.linked ?? splitParas(article.summary).map((p) => [p]);
-  const text = (segs: Seg[]) => segs.map((s) => (typeof s === "string" ? s : s.text)).join("");
-  const factIndex = paras.findIndex((segs) => text(segs).startsWith("Surprising fact:"));
   const images = article.images ?? [];
   const [hero, ...gallery] = images;
 
   return (
-    <div>
+    <NavContext.Provider value={openArticle}>
       <div className="preview-bar">
-        <button onClick={tryAnother}>Try another article</button>
+        <button onClick={tryAnother} disabled={finding}>
+          {finding ? "Opening…" : "Try another article"}
+        </button>
         {!isToday && (
           <Link href="/" className="home-link">
             ← Today’s article
@@ -178,10 +162,7 @@ export default function ArticleView({ article, isToday }: { article: Article; is
       </div>
       <h1>{article.title}</h1>
       {hero && <Figure img={hero} className="hero" />}
-      {paras.map((segs, i) =>
-        i === factIndex ? null : <Para key={i} segs={segs} onOpen={openArticle} />,
-      )}
-      {factIndex >= 0 && <Para segs={paras[factIndex]} className="fact" onOpen={openArticle} />}
+      {body}
       {gallery.length > 0 && (
         <div className="gallery">
           {gallery.map((img) => (
@@ -199,6 +180,6 @@ export default function ArticleView({ article, isToday }: { article: Article; is
           Read the full article on Wikipedia →
         </a>
       </p>
-    </div>
+    </NavContext.Provider>
   );
 }

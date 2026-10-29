@@ -14,8 +14,9 @@ One Wikipedia article about the ancient world each day, summarized by Claude.
   unseen title that passes the filter, fetches it, summarizes it, and saves it to
   `daily_articles`.
 - **`/api/today`**: public JSON of the latest pick (`?days=7` for the last N).
-- **`/`**: today's article and the last week. Has a temporary "Try another"
-  button (`/api/preview`) that shows a random pick without saving it.
+- **`/`**: redirects to today's article at `/a/<title>`. Every article has its own
+  URL; the page shows title and images immediately and streams in the summary.
+- **`/api/random`** (temporary, for "Try another article"): picks a random title fast.
 
 Groups and their sources live in `lib/wiki.ts` (`GROUPS`). Type rules live in
 `lib/classify.ts`.

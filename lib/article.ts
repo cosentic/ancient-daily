@@ -1,23 +1,32 @@
-// Loads any pool article for /a/[title]: cached summary if we have one,
-// otherwise fetch + summarize once and cache it.
+// Loads articles for /a/[title] in two stages so the page can render fast:
+//   loadHeader:  title, group, date, URL, images (+ summary if already saved)  ~0.5s
+//   loadSummary: the Claude summary, generated and cached on first visit       ~10s
 
 import { cache } from "react";
 import { db } from "@/lib/db";
-import { GROUPS, fetchArticle, fetchImages } from "@/lib/wiki";
+import { GROUPS, fetchBody, fetchHeader, fetchImages } from "@/lib/wiki";
 import { summarize, SELF_REFERENCE } from "@/lib/summarize";
 import type { WikiImage } from "@/lib/wiki";
 
-export type Loaded = {
+export type Header = {
   grp: string;
-  title: string;
+  title: string; // display title
   url: string;
-  summary: string;
+  lead: string; // Wikipedia's intro paragraph (fallback text, link previews)
   images: WikiImage[];
   /** Set when this article was a daily pick (most recent date). */
   day?: string;
+  /** Present when a usable summary is already saved. */
+  summary?: string;
 };
 
-export async function saveToCache(a: Omit<Loaded, "day">) {
+export async function saveToCache(a: {
+  title: string;
+  grp: string;
+  url: string;
+  summary: string;
+  images: WikiImage[];
+}) {
   const { error } = await db()
     .from("article_cache")
     .upsert({ ...a, created_at: new Date().toISOString() });
@@ -45,13 +54,14 @@ export async function recentDaily(limit = 8) {
   return (data ?? []) as { day: string; title: string }[];
 }
 
-async function load(title: string): Promise<Loaded | null> {
-  const supabase = db();
+const usable = (s?: string | null) => !!s && !SELF_REFERENCE.test(s);
 
+async function header(title: string): Promise<Header | null> {
+  const supabase = db();
   const [{ data: daily }, { data: cached }] = await Promise.all([
     supabase
       .from("daily_articles")
-      .select("day, grp, title, url, summary, images")
+      .select("day, grp, title, url, lead, summary, images")
       .eq("title", title)
       .order("day", { ascending: false })
       .limit(1)
@@ -64,19 +74,26 @@ async function load(title: string): Promise<Loaded | null> {
   ]);
   const day = (daily?.day as string) ?? undefined;
 
-  // Summaries that talk about "the article" instead of the subject get regenerated.
-  if (cached?.summary && !SELF_REFERENCE.test(cached.summary)) {
-    return { ...cached, images: cached.images ?? [], day } as Loaded;
+  // Already summarized: everything comes from the database.
+  if (cached && usable(cached.summary)) {
+    return {
+      grp: cached.grp,
+      title: cached.title,
+      url: cached.url,
+      lead: "",
+      images: cached.images ?? [],
+      day,
+      summary: cached.summary,
+    };
   }
-  if (daily?.summary && !SELF_REFERENCE.test(daily.summary)) {
-    // Daily picks saved before images existed: fetch them now.
+  if (daily && usable(daily.summary)) {
     const images =
       daily.images ?? (await fetchImages(daily.title).catch(() => [] as WikiImage[]));
-    return { ...daily, images, day } as Loaded;
+    return { ...daily, lead: daily.lead ?? "", images, day } as Header;
   }
 
-  // Only summarize titles that are in the pool, so the route can't be used
-  // to run Claude on arbitrary Wikipedia pages.
+  // New article: only titles in the pool, so the route can't be used to run
+  // Claude on arbitrary Wikipedia pages.
   const { data: groups } = await supabase.from("pool").select("grp").eq("title", title);
   if (!groups?.length && !daily) return null;
   // An article can sit in several groups (Caracalla: Greece & Rome and Ancient
@@ -87,20 +104,22 @@ async function load(title: string): Promise<Loaded | null> {
     (groups ?? []).map((g) => g.grp as string).sort((a, b) => rank(a) - rank(b))[0] ??
     (daily?.grp as string);
 
-  const article = await fetchArticle(title);
-  if (!article.body && !article.lead) return null;
-  const summary = await summarize(article.title, article.body, article.lead);
-  const loaded = {
-    grp,
-    // Keep the requested title as the key so links resolve to this cache row.
-    title,
-    url: article.url,
-    summary,
-    images: article.images,
-  };
-  await saveToCache(loaded);
-  return { ...loaded, title: article.title, day };
+  const h = await fetchHeader(title);
+  return { grp, ...h, day };
 }
 
-/** Deduplicated per request, so the page and its metadata share one load. */
-export const loadArticle = cache(load);
+async function summary(title: string): Promise<string> {
+  const h = await loadHeader(title);
+  if (!h) return "";
+  if (h.summary) return h.summary;
+  const body = await fetchBody(title).catch(() => "");
+  if (!body && !h.lead) return "";
+  const text = await summarize(h.title, body, h.lead);
+  // Cache under the requested title so links to it resolve here next time.
+  await saveToCache({ title, grp: h.grp, url: h.url, summary: text, images: h.images });
+  return text;
+}
+
+/** Deduplicated per request, so the page, its metadata and the summary share one load. */
+export const loadHeader = cache(header);
+export const loadSummary = cache(summary);

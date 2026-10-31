@@ -21,15 +21,38 @@ Good: "Why the city was abandoned remains unclear."
 
 Use only facts from the source material.`;
 
+/**
+ * EXPERIMENT: a summary about half as long, focused on the most impactful
+ * content. Same voice rules; only the length/focus section differs.
+ */
+export const SYSTEM_SHORT = SYSTEM.replace(
+  /Format:[\s\S]*?- No headings, bullet points, or markdown\./,
+  `Format:
+- Exactly 2 short paragraphs of plain prose, about 150–180 words in total.
+- Then one final line that starts with "Surprising fact:" and gives one specific, surprising detail.
+- No headings, bullet points, or markdown.
+
+Focus — keep only what matters most to a general reader:
+- First paragraph: what it is, when and where, and why it matters.
+- Second paragraph: the single most dramatic or consequential part of the story, and its lasting impact.
+- Cut minor names, secondary dates, figures that don't change the story, and side details. One vivid specific beats three routine ones.`,
+);
+
 /** Phrases that mean the summary is talking about its source instead of the subject. */
 export const SELF_REFERENCE =
   /\b(the|this) (Wikipedia )?(article|entry|source)\b|\bWikipedia\b|\bthe (text|material) (says|states|explains|notes|describes|mentions|ends)\b/i;
 
-async function callClaude(client: Anthropic, title: string, source: string, extra = "") {
+async function callClaude(
+  client: Anthropic,
+  title: string,
+  source: string,
+  extra = "",
+  system = SYSTEM,
+) {
   const msg = await client.messages.create({
     model: "claude-haiku-5-5",
     max_tokens: 3000,
-    system: SYSTEM,
+    system,
     messages: [
       {
         role: "user",
@@ -47,7 +70,12 @@ async function callClaude(client: Anthropic, title: string, source: string, extr
 }
 
 /** Summarize with Claude; falls back to Wikipedia's own lead on any failure. */
-export async function summarize(title: string, body: string, lead: string) {
+export async function summarize(
+  title: string,
+  body: string,
+  lead: string,
+  system: string = SYSTEM,
+) {
   if (!process.env.ANTHROPIC_API_KEY) {
     console.warn("[summarize] ANTHROPIC_API_KEY not set; using Wikipedia lead");
     return lead;
@@ -55,7 +83,7 @@ export async function summarize(title: string, body: string, lead: string) {
   try {
     const client = new Anthropic();
     const source = (body || lead).slice(0, 40000);
-    let { text, stop } = await callClaude(client, title, source);
+    let { text, stop } = await callClaude(client, title, source, "", system);
 
     // One retry if it slipped into talking about the source.
     if (SELF_REFERENCE.test(text)) {
@@ -65,6 +93,7 @@ export async function summarize(title: string, body: string, lead: string) {
         title,
         source,
         " Do not mention the article, the source, or Wikipedia anywhere; state the facts directly.",
+        system,
       ));
     }
 
